@@ -11,6 +11,9 @@ export type PlayerRow = {
   isTyping: boolean;
   /** Room leader: decides whether the AI plays, and hosts its turns. */
   isLeader?: boolean;
+  /** Whoever created the room — the only one who can kick. Separate from
+   *  `isLeader`, which can land on anyone currently online. */
+  isCreator?: boolean;
   /** The AI bot's synthetic row — not a real connected participant. */
   isAi?: boolean;
 };
@@ -29,6 +32,8 @@ export default function PlayersPanel({
   aiDrawing,
   canToggleAi,
   onToggleAi,
+  canKick,
+  onKick,
 }: {
   players: PlayerRow[];
   aiEnabled: boolean;
@@ -39,6 +44,9 @@ export default function PlayersPanel({
   /** Only the room leader decides whether the AI is in the game. */
   canToggleAi: boolean;
   onToggleAi: () => void;
+  /** Only the room leader can remove another player. */
+  canKick: boolean;
+  onKick: (id: string, name: string) => void;
 }) {
   // The bot sits in the roster like any other player while it's in the game,
   // so toggling it gets the same enter/exit animation as someone joining or
@@ -182,6 +190,11 @@ export default function PlayersPanel({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 truncate text-sm text-fg/80">
                       <span className="truncate">{p.name}</span>
+                      {p.isCreator && (
+                        <span className="shrink-0" title="Creó la sala — puede expulsar jugadores">
+                          🏠
+                        </span>
+                      )}
                       {p.isLeader && (
                         <span className="shrink-0" title="Líder de la sala — decide si la IA juega">
                           👑
@@ -208,6 +221,16 @@ export default function PlayersPanel({
                       )}
                     </div>
                   </div>
+                  {canKick && !p.isAi && !p.isMe && (
+                    <button
+                      onClick={() => onKick(p.id, p.name)}
+                      title={`Expulsar a ${p.name}`}
+                      aria-label={`Expulsar a ${p.name}`}
+                      className="shrink-0 rounded-md px-1.5 py-1 text-xs text-fg/30 hover:bg-red-500/10 hover:text-red-400"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               </div>
             </li>

@@ -4,14 +4,18 @@ import PlayerBadge from "./PlayerBadge";
 
 // Shown when the configured number of rounds is done. `scores` is already
 // sorted highest-first (same shape the Scoreboard uses): [name, points][].
+export type GalleryItem = { image: string; word: string; winner?: string; ai?: boolean };
+
 export default function Podium({
   scores,
   totalRounds,
+  gallery = [],
   onNewGame,
   onLeave,
 }: {
   scores: [string, number][];
   totalRounds: number;
+  gallery?: GalleryItem[];
   onNewGame: () => void;
   onLeave: () => void;
 }) {
@@ -30,7 +34,7 @@ export default function Podium({
 
   return (
     <div className="absolute inset-0 z-20 grid place-items-center bg-ink/90 p-6 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl border border-edge bg-panel p-8 text-center shadow-xl">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-edge bg-panel p-8 text-center shadow-xl">
         <div className="text-4xl">🏆</div>
         <h2 className="mt-2 text-xl font-semibold">
           {winner ? (
@@ -79,6 +83,32 @@ export default function Podium({
               </li>
             ))}
           </ul>
+        )}
+
+        {gallery.length > 0 && (
+          <div className="mt-7 text-left">
+            <div className="mb-2 text-xs uppercase tracking-wide text-fg/40">
+              Galería de la partida
+            </div>
+            <div className="grid max-h-56 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3">
+              {gallery.map((g, i) => (
+                <figure key={i} className="overflow-hidden rounded-lg border border-edge">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- data URL, not a remote asset */}
+                  <img
+                    src={g.image}
+                    alt={g.word}
+                    className="aspect-[3/2] w-full object-cover"
+                  />
+                  <figcaption className="flex items-center justify-between gap-1 px-2 py-1 text-[11px]">
+                    <span className="truncate font-medium text-fg/80">{g.word}</span>
+                    <span className="shrink-0 text-fg/40">
+                      {g.winner ? (g.ai ? "🤖" : "✓") : "—"}
+                    </span>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
         )}
 
         <div className="mt-7 flex gap-2">

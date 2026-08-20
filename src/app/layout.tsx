@@ -14,7 +14,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
       <body className="min-h-screen antialiased">
         {/* A plain <script> in a manual <head> gets dropped by the App
             Router when a `metadata` export is also present — next/script

@@ -1,5 +1,10 @@
 // Shared message shapes for each Portal channel.
 
+// How often/aggressively the AI tries to guess while someone else draws.
+// Chosen once by the room creator (see game-config below) — see
+// GUESS_INTERVAL_MS in Game.tsx for what each level actually does.
+export type AiDifficulty = "easy" | "normal" | "hard";
+
 // draw:<room>  — high-frequency ephemeral stroke deltas from the current drawer.
 export type StrokePoint = { x: number; y: number };
 
@@ -45,7 +50,29 @@ export type GameMsg =
       // the word to validate guesses, exactly as a human drawer would.
       aiDrawing?: boolean;
     }
-  | { kind: "round-end"; word: string; winner?: string; ai?: boolean }
+  | {
+      kind: "round-end";
+      word: string;
+      winner?: string;
+      ai?: boolean;
+      // Points awarded to the winner this round. Speed-based (faster guess =
+      // more), so the scoreboard rewards quick reads instead of a flat +1.
+      // Optional for backward-compatibility with rounds recorded before this
+      // existed (they tally as a single point). Streak bonuses are computed at
+      // tally time from the sequence of winners, not stored here.
+      points?: number;
+    }
+  // A finished round's drawing, captured by the client that held the word and
+  // shared so everyone can see the gallery on the end-of-game podium. Sent as
+  // its own message (not folded into round-end) to keep round-end tiny and its
+  // derivations untouched. `image` is a small downscaled JPEG data URL.
+  | {
+      kind: "round-art";
+      image: string;
+      word: string;
+      winner?: string;
+      ai?: boolean;
+    }
   // A deliberate departure (the "Leave" button) — lets everyone drop this
   // player from the roster immediately instead of waiting out the activity
   // heartbeat's expiry window. (Sent as a regular persistent message: the
@@ -70,10 +97,23 @@ export type GameMsg =
   // Total rounds for this game, chosen by whoever created the room. Broadcast
   // once so every client (including late joiners, via history) agrees on when
   // the game ends and the podium shows. 0 = unlimited (legacy / no config).
-  | { kind: "game-config"; totalRounds: number }
+  // `aiDifficulty` and `customWords` ride along on the same one-time
+  // broadcast — all three are room-wide choices the creator makes once,
+  // before anyone can be drawing. An empty/absent `customWords` means the
+  // room uses the default word bank.
+  | {
+      kind: "game-config";
+      totalRounds: number;
+      aiDifficulty?: AiDifficulty;
+      customWords?: string[];
+    }
   // "Play again" in the same room: marks a new baseline so rounds-played and
   // scores are counted only from here on, without leaving for a new room.
-  | { kind: "game-reset" };
+  | { kind: "game-reset" }
+  // Room leader removes a player. Broadcast rather than a direct message —
+  // there's no way to target one recipient over Portal — so every client
+  // sees it and only the matching `playerId` acts on it (leaves).
+  | { kind: "kick"; playerId: string };
 
 // cursor:<room> — posición del lápiz del dibujante, normalizada 0..1 respecto
 // al lienzo. Muy frecuente y desechable: el canal se usa con `history: "none"`

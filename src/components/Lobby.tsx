@@ -6,7 +6,9 @@ import PlayerBadge from "./PlayerBadge";
 import ThemeToggle from "./ThemeToggle";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/room";
 import { portal } from "@/lib/portal";
+import { parseCustomWords } from "@/lib/words";
 import {
+  AiDifficulty,
   chatChannel,
   cursorChannel,
   drawChannel,
@@ -15,16 +17,30 @@ import {
 } from "@/lib/types";
 
 const ROUND_OPTIONS = [3, 5, 10];
+const DIFFICULTY_OPTIONS: { value: AiDifficulty; label: string }[] = [
+  { value: "easy", label: "Fácil" },
+  { value: "normal", label: "Normal" },
+  { value: "hard", label: "Difícil" },
+];
 
 export default function Lobby({
   onJoin,
 }: {
-  onJoin: (name: string, roomCode: string, totalRounds?: number) => void;
+  onJoin: (
+    name: string,
+    roomCode: string,
+    totalRounds?: number,
+    aiDifficulty?: AiDifficulty,
+    customWords?: string[],
+  ) => void;
 }) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"create" | "join">("create");
   const [joinCode, setJoinCode] = useState("");
   const [rounds, setRounds] = useState(5);
+  const [difficulty, setDifficulty] = useState<AiDifficulty>("normal");
+  const [customWordsText, setCustomWordsText] = useState("");
+  const customWordCount = parseCustomWords(customWordsText).length;
 
   // Generated once per visit (not at submit time) so it can double as the
   // room to prewarm below — reusing the exact code we're about to create.
@@ -63,10 +79,13 @@ export default function Lobby({
   function submit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    const customWords = mode === "create" ? parseCustomWords(customWordsText) : [];
     onJoin(
       trimmed,
       mode === "create" ? createdCode : trimmedCode,
       mode === "create" ? rounds : undefined,
+      mode === "create" ? difficulty : undefined,
+      customWords.length > 0 ? customWords : undefined,
     );
   }
 
@@ -174,6 +193,50 @@ export default function Lobby({
                     </button>
                   ))}
                 </div>
+              </div>
+            ) : null}
+
+            {mode === "create" ? (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-fg/80">
+                  Dificultad de la IA
+                </label>
+                <div className="flex gap-1 rounded-full border border-edge p-1">
+                  {DIFFICULTY_OPTIONS.map(({ value, label }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setDifficulty(value)}
+                      className={`flex-1 rounded-full py-2 text-sm font-medium transition ${
+                        difficulty === value
+                          ? "bg-gradient-to-r from-accent to-purple-500 text-white shadow"
+                          : "text-fg/60 hover:text-fg/90"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {mode === "create" ? (
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-fg/80">
+                  Palabras personalizadas <span className="font-normal text-fg/40">(opcional)</span>
+                </label>
+                <textarea
+                  value={customWordsText}
+                  onChange={(e) => setCustomWordsText(e.target.value)}
+                  placeholder="gato, casa, cohete…"
+                  rows={2}
+                  className="w-full resize-none rounded-xl border border-edge bg-ink px-3 py-2.5 text-sm outline-none placeholder:text-fg/30 focus:border-accent"
+                />
+                <p className="mt-1 text-xs text-fg/40">
+                  {customWordCount > 0
+                    ? `${customWordCount} palabra${customWordCount === 1 ? "" : "s"} — reemplazan el banco por defecto.`
+                    : "Separadas por coma o salto de línea. Si lo dejas vacío, se usa el banco por defecto."}
+                </p>
               </div>
             ) : (
               <div>

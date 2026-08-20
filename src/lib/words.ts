@@ -11,6 +11,37 @@ export function randomWord(): string {
   return WORDS[Math.floor(Math.random() * WORDS.length)];
 }
 
+// Draws from the room's custom list when the host set one, otherwise falls
+// back to the default bank — the one place that decides which source a
+// round's word comes from.
+export function pickWord(custom?: string[]): string {
+  if (custom && custom.length > 0) {
+    return custom[Math.floor(Math.random() * custom.length)];
+  }
+  return randomWord();
+}
+
+const MAX_CUSTOM_WORDS = 100;
+
+// Turns the host's free-form textarea input into a clean word list: split on
+// commas or newlines (whichever they used), trim, drop blanks, and
+// case-insensitively dedupe — capped so one pasted wall of text can't bloat
+// the game-config broadcast everyone receives.
+export function parseCustomWords(text: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of text.split(/[,\n]/)) {
+    const w = raw.trim();
+    if (!w) continue;
+    const key = w.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(w);
+    if (out.length >= MAX_CUSTOM_WORDS) break;
+  }
+  return out;
+}
+
 // Length hint shown to guessers, e.g. "cat" -> "_ _ _".
 export function maskWord(word: string): string {
   return word

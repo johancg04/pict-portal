@@ -77,6 +77,11 @@ export default function Canvas({
   const [colors, setColors] = useState<string[]>([DARK_INK, ...REST_COLORS]);
   const [color, setColor] = useState(DARK_INK);
   const [size, setSize] = useState(SIZES[1]);
+  // Eraser paints in the canvas background color. Over the wire it's the
+  // "erase" sentinel (like "auto") so each viewer erases against *their own*
+  // theme background rather than a literal hex that could smear a visible
+  // rectangle on a mismatched theme.
+  const [erasing, setErasing] = useState(false);
 
   const { send, me } = useChannel<DrawMsg>({
     channelId: drawChannel(roomCode),
@@ -192,7 +197,15 @@ export default function Canvas({
   const applyRemote = useCallback(
     (msg: DrawMsg) => {
       if (msg.kind === "clear") clearCanvas();
-      else paintSegment(msg.points, msg.color === "auto" ? inkRef.current : msg.color, msg.size);
+      else {
+        const resolved =
+          msg.color === "auto"
+            ? inkRef.current
+            : msg.color === "erase"
+              ? bgRef.current
+              : msg.color;
+        paintSegment(msg.points, resolved, msg.size);
+      }
     },
     [clearCanvas, paintSegment],
   );
@@ -261,7 +274,7 @@ export default function Canvas({
     // near-black stroke on a light-theme viewer as near-black-on-black if
     // they're in dark mode (or the reverse). Send the sentinel instead, and
     // let each viewer resolve it against their own local theme on receipt.
-    const wireColor = color === colors[0] ? "auto" : color;
+    const wireColor = erasing ? "erase" : color === colors[0] ? "auto" : color;
     void send({ content: { kind: "stroke", points, color: wireColor, size } });
   }
 
@@ -274,7 +287,7 @@ export default function Canvas({
     const p = toCanvasPoint(e);
     lastSent.current = p;
     buffer.current = [p];
-    paintSegment([p], color, size);
+    paintSegment([p], erasing ? bgRef.current : color, size);
   }
 
   function onPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
@@ -285,7 +298,7 @@ export default function Canvas({
     cursorReportRef.current?.({ x: p.x / W, y: p.y / H });
     if (!drawing.current) return;
     // Paint locally through the last point for a continuous line.
-    if (lastSent.current) paintSegment([lastSent.current, p], color, size);
+    if (lastSent.current) paintSegment([lastSent.current, p], erasing ? bgRef.current : color, size);
     buffer.current.push(p);
     lastSent.current = p;
     flush();
@@ -342,14 +355,27 @@ export default function Canvas({
             {colors.map((c) => (
               <button
                 key={c}
-                onClick={() => setColor(c)}
+                onClick={() => {
+                  setColor(c);
+                  setErasing(false);
+                }}
                 aria-label={`color ${c}`}
                 className={`h-7 w-7 rounded-full border-2 ${
-                  color === c ? "border-fg" : "border-transparent"
+                  color === c && !erasing ? "border-fg" : "border-transparent"
                 }`}
                 style={{ background: c }}
               />
             ))}
+            <button
+              onClick={() => setErasing((v) => !v)}
+              aria-label="borrador"
+              title="Borrador"
+              className={`grid h-7 w-7 place-items-center rounded-full border-2 text-sm ${
+                erasing ? "border-fg bg-fg/10" : "border-edge"
+              }`}
+            >
+              🧽
+            </button>
           </div>
           <div className="flex items-center gap-2">
             {SIZES.map((s) => (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { playCorrect } from "@/lib/sound";
 
 // Confetti + a short chime when someone nails the word. Both are generated at
 // runtime (canvas particles, Web Audio oscillators) so there's no library and
@@ -192,7 +193,7 @@ export default function Celebration({
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (!reduced) burst();
-    if (!muted) chime();
+    if (!muted) playCorrect();
   }, [trigger, muted, armed, burst]);
 
   // Keep the canvas matched to the window if it changes mid-flight.
@@ -210,33 +211,4 @@ export default function Celebration({
       className="pointer-events-none fixed inset-0 z-50"
     />
   );
-}
-
-/** A short rising major triad — reads as "you got it" without being shrill. */
-function chime() {
-  try {
-    const Ctor =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) return;
-    const ctx = new Ctor();
-    const now = ctx.currentTime;
-    [523.25, 659.25, 783.99].forEach((freq, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = "triangle";
-      osc.frequency.value = freq;
-      const t = now + i * 0.09;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.16, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.4);
-    });
-    // Contexts are a limited resource; let this one go once it's done.
-    setTimeout(() => void ctx.close(), 1200);
-  } catch {
-    /* autoplay policy or unsupported browser — just stay silent */
-  }
 }
