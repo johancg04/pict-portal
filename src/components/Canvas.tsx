@@ -58,6 +58,33 @@ export default function Canvas({
   const lastFlush = useRef(0);
   const cursorReportRef = useRef<CursorReporter | null>(null);
 
+  // ---- Page-scroll lock during an active stroke ------------------------------
+  // On phones the whole page scrolls (the layout is one tall column below
+  // `lg`), so anything that scrolls the document mid-gesture — a chat-driven
+  // reflow, a stray focus(), the browser itself — would slide the canvas out
+  // from under the pen and ruin the stroke. While a stroke is live we pin the
+  // scroll position and undo every window scroll event until the gesture
+  // ends. Event-driven: fires exactly when something tries to scroll, no
+  // polling/timers, and works the same on Safari iOS and Chrome Android.
+  const scrollPinRef = useRef<{ x: number; y: number } | null>(null);
+  const restoreScrollPin = useCallback(() => {
+    const pin = scrollPinRef.current;
+    if (pin) window.scrollTo(pin.x, pin.y);
+  }, []);
+  const holdPageScroll = useCallback(() => {
+    if (scrollPinRef.current) return;
+    scrollPinRef.current = { x: window.scrollX, y: window.scrollY };
+    window.addEventListener("scroll", restoreScrollPin);
+  }, [restoreScrollPin]);
+  const releasePageScroll = useCallback(() => {
+    if (!scrollPinRef.current) return;
+    scrollPinRef.current = null;
+    window.removeEventListener("scroll", restoreScrollPin);
+  }, [restoreScrollPin]);
+  // Canvas remounts per round (`key={round.id}`) — drop the listener even if
+  // the component goes away mid-stroke.
+  useEffect(() => () => releasePageScroll(), [releasePageScroll]);
+
   // Start dark (matches the server-rendered default, avoiding a hydration
   // mismatch) and correct to the real theme once mounted — see the effect
   // below, same pattern as ThemeToggle. The canvas paint itself has no such
@@ -284,6 +311,9 @@ export default function Canvas({
     if (!canDraw) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     drawing.current = true;
+    // The gesture belongs to the canvas from here on: pin the page scroll
+    // until the stroke ends (see the scroll-lock block above).
+    holdPageScroll();
     const p = toCanvasPoint(e);
     lastSent.current = p;
     buffer.current = [p];
@@ -314,6 +344,7 @@ export default function Canvas({
     drawing.current = false;
     flush(true);
     lastSent.current = null;
+    releasePageScroll();
   }
 
   function onClear() {
@@ -328,7 +359,7 @@ export default function Canvas({
           ref={canvasRef}
           width={W}
           height={H}
-          className="aspect-[3/2] w-full"
+          className="aspect-[3/2] w-full touch-none select-none"
           style={{ cursor: canDraw ? "crosshair" : "not-allowed" }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}

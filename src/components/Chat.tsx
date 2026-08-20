@@ -20,10 +20,21 @@ export default function Chat({
   onTyping?: () => void;
 }) {
   const [text, setText] = useState("");
-  const endRef = useRef<HTMLDivElement | null>(null);
+  // The chat's own scroll container. Autoscrolling must go through THIS
+  // element only: scrollIntoView() would also walk up and scroll every
+  // scrollable ancestor — including the document on mobile, where the layout
+  // is one tall column — yanking the canvas out from under a stroke in
+  // progress every time a message lands.
+  const feedRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = feedRef.current;
+    if (!el) return;
+    // Follow new messages only while the reader is already at the bottom;
+    // if they scrolled up to re-read guesses, don't rip them back down.
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (!nearBottom) return;
+    el.scrollTop = el.scrollHeight;
   }, [items.length]);
 
   function submit(e: FormEvent) {
@@ -39,11 +50,10 @@ export default function Chat({
       <div className="border-b border-edge px-4 py-3 text-sm font-medium text-fg/70">
         Respuestas
       </div>
-      <div className="flex-1 space-y-2 overflow-y-auto px-4 py-3">
+      <div ref={feedRef} className="flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 py-3">
         {items.map((it) => (
           <Line key={it.id} msg={it.content} />
         ))}
-        <div ref={endRef} />
       </div>
       <form onSubmit={submit} className="flex gap-2 border-t border-edge p-3">
         <input
