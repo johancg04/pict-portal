@@ -160,7 +160,7 @@ export default function PlayersPanel({
   }
 
   return (
-    <div className="flex w-full flex-col gap-2 rounded-xl border border-edge bg-panel px-4 py-3 lg:h-full lg:w-56 lg:shrink-0">
+    <div className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4 lg:h-full lg:w-56 lg:shrink-0">
       <span className="text-xs uppercase tracking-wide text-fg/40">
         Jugadores · {roster.length}
       </span>

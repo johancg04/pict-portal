@@ -34,11 +34,14 @@
 html,
 body {
   height: 100%;
+  max-width: 100%;
+  overflow-x: clip;
   background: rgb(var(--color-ink));
   color: rgb(var(--color-fg));
 }
 
 * {
+  box-sizing: border-box;
   -webkit-tap-highlight-color: transparent;
 }
 

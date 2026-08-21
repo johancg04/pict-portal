@@ -1221,7 +1221,7 @@ export default function Game({
   const connecting = game.status !== "ready" || chat.status !== "ready";
 
   return (
-    <div className="relative mx-auto flex max-w-7xl flex-col gap-4 p-4 lg:h-screen lg:flex-row">
+    <div className="relative mx-auto flex min-h-dvh w-full max-w-7xl flex-col gap-3 overflow-x-hidden p-3 sm:gap-4 sm:p-4 lg:h-screen lg:flex-row">
       <Celebration trigger={myWinId} muted={muted} armed={chatHistoryLoaded} />
       <Notifications toasts={toasts} />
 
@@ -1260,9 +1260,9 @@ export default function Game({
       />
 
       {/* Center: canvas + status */}
-      <div className="flex flex-1 flex-col gap-3">
-        <header className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
+      <div className="order-first flex min-w-0 flex-1 flex-col gap-3 lg:order-none">
+        <header className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
+          <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:justify-start">
             <button
               onClick={handleLeave}
               className="flex items-center gap-1 rounded-md border border-edge px-2.5 py-1 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90"
@@ -1274,9 +1274,9 @@ export default function Game({
               Pict<span className="text-accent">-Portal</span>
             </h1>
           </div>
-          <div className="flex items-center gap-5">
-            <span className="font-mono tracking-widest text-fg/80">
-              Sala:{roomCode}
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3 lg:gap-5">
+            <span className="rounded-md bg-panel px-2 py-1 font-mono text-sm tracking-widest text-fg/80 sm:bg-transparent sm:p-0 sm:text-base">
+              Sala: {roomCode}
             </span>
             {totalRounds > 0 && (
               <span className="rounded-md border border-edge px-2 py-0.5 text-xs font-medium text-fg/70">
@@ -1292,9 +1292,10 @@ export default function Game({
               </span>
             )}
             <Status status={game.status} />
-            <div className="flex items-center gap-1.5 text-xs text-fg/50">
-              eres <PlayerBadge name={name} />
-              <span className="text-fg/80">{name}</span>
+            <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-fg/50 sm:ml-0">
+              <span className="hidden sm:inline">eres</span>
+              <PlayerBadge name={name} />
+              <span className="max-w-24 truncate text-fg/80">{name}</span>
             </div>
             <button
               onClick={toggleMuted}
@@ -1308,7 +1309,7 @@ export default function Game({
           </div>
         </header>
 
-        <div className="flex items-center justify-between rounded-xl border border-edge bg-panel px-4 py-3">
+        <div className="flex min-w-0 items-center justify-between rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4">
           {round.active ? (
             <>
               <div className="text-sm">
@@ -1377,7 +1378,7 @@ export default function Game({
               </div>
             </>
           ) : (
-            <div className="flex w-full items-center justify-between">
+            <div className="flex w-full min-w-0 flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-sm">
                 <div className="font-medium text-fg/80">Sala de espera</div>
                 <div className="mt-1 flex items-center gap-1.5 text-xs text-fg/60">
@@ -1431,7 +1432,7 @@ export default function Game({
       </div>
 
       {/* Right: chat */}
-      <div className="h-[420px] w-full lg:h-auto lg:w-96">
+      <div className="h-[360px] min-w-0 w-full sm:h-[420px] lg:h-auto lg:w-96">
         <Chat
           items={feed}
           // Hosting the AI's turn is a background job, not a turn of your own
