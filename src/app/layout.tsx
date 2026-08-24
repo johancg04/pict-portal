@@ -2,10 +2,32 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
 
+const siteUrl = "https://pict-portal.vercel.app";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
+  applicationName: "Pict-Portal",
   title: "Pict-Portal — dibuja con una IA, en vivo",
   description:
     "Pictionary multijugador en tiempo real donde una IA juega contigo. Hecho con Portal.",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    locale: "es_PE",
+    url: "/",
+    siteName: "Pict-Portal",
+    title: "Pict-Portal — dibuja con una IA, en vivo",
+    description:
+      "Pictionary multijugador en tiempo real donde una IA juega contigo. Hecho con Portal.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Pict-Portal — dibuja con una IA, en vivo",
+    description:
+      "Pictionary multijugador en tiempo real donde una IA juega contigo. Hecho con Portal.",
+  },
 };
 
 export const viewport: Viewport = {
@@ -19,9 +41,23 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const websiteJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "Pict-Portal",
+    alternateName: ["Pict Portal", "pict-portal.vercel.app"],
+    url: `${siteUrl}/`,
+  };
+
   return (
     <html lang="es" suppressHydrationWarning>
       <body className="min-h-screen antialiased">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(websiteJsonLd).replace(/</g, "\\u003c"),
+          }}
+        />
         {/* A plain <script> in a manual <head> gets dropped by the App
             Router when a `metadata` export is also present — next/script
             with beforeInteractive is the supported way to run this before
