@@ -34,7 +34,7 @@ export default function ThemeToggle() {
       onClick={toggle}
       title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
       aria-label="Cambiar tema"
-      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-edge text-fg/70 hover:bg-fg/5 hover:text-fg/90"
+      className="pp-icon-btn pp-theme-toggle flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-edge text-fg/70 hover:bg-fg/5 hover:text-fg/90"
     >
       {theme === "dark" ? "☀️" : "🌙"}
     </button>

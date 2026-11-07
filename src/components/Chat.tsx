@@ -46,8 +46,8 @@ export default function Chat({
   }
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-edge bg-panel">
-      <div className="border-b border-edge px-4 py-3 text-sm font-medium text-fg/70">
+    <div className="pp-panel pp-chat flex h-full flex-col rounded-xl border border-edge bg-panel">
+      <div className="pp-panel-title border-b border-edge px-4 py-3 text-sm font-medium text-fg/70">
         Respuestas
       </div>
       <div ref={feedRef} className="flex-1 space-y-2 overflow-y-auto overscroll-contain px-4 py-3">
@@ -64,12 +64,13 @@ export default function Chat({
           }}
           disabled={disabled}
           placeholder={placeholder}
-          className="flex-1 rounded-md border border-edge bg-ink px-3 py-2 text-sm outline-none placeholder:text-fg/30 focus:border-accent disabled:opacity-50"
+          aria-label="Tu respuesta"
+          className="pp-input min-w-0 flex-1 rounded-md border border-edge bg-ink px-3 py-2 text-base outline-none placeholder:text-fg/30 focus:border-accent disabled:opacity-50 sm:text-sm"
         />
         <button
           type="submit"
           disabled={disabled}
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+          className="pp-btn-primary rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
         >
           Enviar
         </button>
@@ -80,18 +81,18 @@ export default function Chat({
 
 function Line({ msg }: { msg: ChatMsg }) {
   if (msg.kind === "system") {
-    return <p className="text-center text-xs text-fg/40">{msg.text}</p>;
+    return <p className="pp-msg pp-msg--system text-center text-xs text-fg/40">{msg.text}</p>;
   }
   if (msg.kind === "correct") {
     return (
-      <p className="flex items-center gap-1.5 text-sm font-semibold text-green-400">
+      <p className="pp-msg pp-msg--correct flex items-center gap-1.5 text-sm font-semibold text-green-400">
         {msg.ai ? "🤖" : <PlayerBadge name={msg.name} />}
         {msg.ai ? "La IA" : msg.name} acertó — «{msg.word}»
       </p>
     );
   }
   return (
-    <p className="flex items-start gap-1.5 text-sm">
+    <p className={`pp-msg ${msg.ai ? "pp-msg--ai" : "pp-msg--guess"} flex items-start gap-1.5 text-sm`}>
       {msg.ai ? (
         <span className="font-semibold text-accent">🤖 IA</span>
       ) : (

@@ -90,7 +90,7 @@ Además aprovechamos de Portal:
 ## 🛠️ Tecnologías / Tech Stack
 
 **Frontend:** Next.js (App Router) · React · TypeScript · Tailwind CSS
-**Tiempo real / Realtime:** Portal (`@portalsdk/core`, `@portalsdk/react`)
+**Tiempo real / Realtime:** Supabase (Realtime Broadcast + Presence, tabla `room_messages`)
 **IA / AI:** Google Gemini (adivinar, dibujar y pistas)
 **Deploy:** Vercel
 
@@ -104,11 +104,15 @@ npm install
 
 # 2. Variables de entorno / env vars
 cp .env.local.example .env.local
-#   NEXT_PUBLIC_PORTAL_KEY=pk_...     (clave publicable de Portal)
+#   NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co   (Supabase > Project Settings > API)
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...                (clave anon pública)
 #   GEMINI_API_KEY=...               (clave de Google Gemini, opcional)
 #   GEMINI_MODEL=gemini-flash-lite-latest
 
-# 3. Desarrollo / dev
+# 3. Base de datos (una sola vez) / database (once)
+#   En el dashboard de Supabase: SQL Editor -> pega supabase/schema.sql -> Run
+
+# 4. Desarrollo / dev
 npm run dev
 ```
 

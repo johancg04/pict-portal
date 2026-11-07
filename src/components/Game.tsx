@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useChannel } from "@portalsdk/react";
+import { useChannel } from "@/lib/realtime";
 import Canvas from "./Canvas";
 import Celebration from "./Celebration";
 import Chat, { FeedItem } from "./Chat";
@@ -13,6 +13,7 @@ import Podium from "./Podium";
 import Scoreboard from "./Scoreboard";
 import Status from "./Status";
 import ThemeToggle from "./ThemeToggle";
+import SkinPicker from "./SkinPicker";
 import {
   AiDifficulty,
   ChatMsg,
@@ -31,8 +32,12 @@ const CANVAS_H = 600;
 const MAX_HINTS = 3; // per round, so clues never add up to the answer
 const HINT_COOLDOWN_MS = 5_000;
 const AI_TURN_ID = "__ai__"; // the bot's slot in the turn order
-const AI_CHUNK = 2; // points per publish, keeps the line visibly advancing
-const AI_STROKE_MS = 90; // pace between chunks
+// Points per publish and pace between publishes for the AI's own drawing.
+// Viewers replay each chunk over a few frames (see Canvas), so bigger, rarer
+// chunks look just as smooth: ~4 broadcasts/s instead of ~11 at the same
+// drawing speed (6 points / 240 ms ≈ 2 points / 90 ms before).
+const AI_CHUNK = 6;
+const AI_STROKE_MS = 240;
 const AI_PAUSE_MS = 260; // pen lift between strokes
 const LOBBY_WAIT_MS = 30_000; // waiting room countdown before each round begins
 // How often the AI tries to guess while someone else draws, per difficulty.
@@ -853,6 +858,12 @@ export default function Game({
       const changed = snap !== lastSnap;
       lastSnap = snap;
       delay = changed ? base : Math.min(maxDelay, Math.round(delay * 1.5));
+      // Same picture as last time: the model already answered it, so asking
+      // again only spends quota. Wait for the drawing to change.
+      if (!changed) {
+        schedule();
+        return;
+      }
 
       controller?.abort();
       const ac = new AbortController();
@@ -1221,7 +1232,11 @@ export default function Game({
   const connecting = game.status !== "ready" || chat.status !== "ready";
 
   return (
-    <div className="relative mx-auto flex min-h-dvh w-full max-w-7xl flex-col gap-3 overflow-x-hidden p-3 sm:gap-4 sm:p-4 lg:h-screen lg:flex-row">
+    // Layout: one column on phones/tablets portrait; from lg (tablet landscape,
+    // small laptops) a 2-column grid — canvas left, players + chat stacked
+    // right — and from xl the 3-column layout. Overlays are fixed/absolute,
+    // so they never take a grid cell.
+    <div className="pp-game relative mx-auto flex min-h-dvh w-full max-w-[1600px] flex-col gap-3 overflow-x-hidden p-3 sm:gap-4 sm:p-4 lg:grid lg:h-dvh lg:grid-cols-[minmax(0,1fr)_300px] lg:grid-rows-[auto_minmax(0,1fr)] xl:grid-cols-[224px_minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)]">
       <Celebration trigger={myWinId} muted={muted} armed={chatHistoryLoaded} />
       <Notifications toasts={toasts} />
 
@@ -1260,33 +1275,33 @@ export default function Game({
       />
 
       {/* Center: canvas + status */}
-      <div className="order-first flex min-w-0 flex-1 flex-col gap-3 lg:order-none">
-        <header className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
+      <div className="order-first flex min-w-0 flex-1 flex-col gap-3 lg:order-none lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto xl:col-start-2 xl:row-span-1">
+        <header className="pp-header flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2">
           <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:justify-start">
             <button
               onClick={handleLeave}
-              className="flex items-center gap-1 rounded-md border border-edge px-2.5 py-1 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90"
+              className="pp-btn flex items-center gap-1 rounded-md border border-edge px-2.5 py-1 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90"
               title="Salir de la sala"
             >
               ← Salir
             </button>
-            <h1 className="text-lg font-semibold">
+            <h1 className="pp-brand text-lg font-semibold">
               Pict<span className="text-accent">-Portal</span>
             </h1>
           </div>
           <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end sm:gap-3 lg:gap-5">
-            <span className="rounded-md bg-panel px-2 py-1 font-mono text-sm tracking-widest text-fg/80 sm:bg-transparent sm:p-0 sm:text-base">
+            <span className="pp-chip rounded-md bg-panel px-2 py-1 font-mono text-sm tracking-widest text-fg/80 sm:bg-transparent sm:p-0 sm:text-base">
               Sala: {roomCode}
             </span>
             {totalRounds > 0 && (
-              <span className="rounded-md border border-edge px-2 py-0.5 text-xs font-medium text-fg/70">
+              <span className="pp-chip rounded-md border border-edge px-2 py-0.5 text-xs font-medium text-fg/70">
                 Ronda {Math.min(roundsPlayed + 1, totalRounds)}/{totalRounds}
               </span>
             )}
             {aiEnabled && (
               <span
                 title="Qué tan seguido intenta adivinar la IA"
-                className="rounded-md border border-edge px-2 py-0.5 text-xs font-medium text-fg/70"
+                className="pp-chip rounded-md border border-edge px-2 py-0.5 text-xs font-medium text-fg/70"
               >
                 🤖 {DIFFICULTY_LABEL[aiDifficulty]}
               </span>
@@ -1301,22 +1316,23 @@ export default function Game({
               onClick={toggleMuted}
               title={muted ? "Activar sonido de victoria" : "Silenciar sonido de victoria"}
               aria-label="Cambiar sonido"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-edge text-fg/70 hover:bg-fg/5 hover:text-fg/90"
+              className="pp-icon-btn flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-edge text-fg/70 hover:bg-fg/5 hover:text-fg/90"
             >
               {muted ? "🔇" : "🔊"}
             </button>
+            <SkinPicker />
             <ThemeToggle />
           </div>
         </header>
 
-        <div className="flex min-w-0 items-center justify-between rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4">
+        <div className="pp-panel pp-word flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4">
           {round.active ? (
             <>
-              <div className="text-sm">
+              <div className="min-w-0 text-sm">
                 {isDrawer && !round.aiDrawing ? (
                   <>
                     Estás dibujando:{" "}
-                    <span className="font-mono text-base font-semibold text-accent">
+                    <span className="pp-masked font-mono text-base font-semibold text-accent">
                       {wordLabel}
                     </span>
                   </>
@@ -1332,16 +1348,16 @@ export default function Game({
                       )}
                       {round.drawerName} está dibujando
                     </span>{" "}
-                    <span className="ml-2 font-mono tracking-widest text-fg/90">
+                    <span className="pp-masked ml-2 font-mono tracking-widest text-fg/90">
                       {round.masked}
                     </span>
                   </>
                 )}
               </div>
-              <div className="flex shrink-0 items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                 <div
-                  className={`font-mono text-lg ${
-                    secondsLeft <= 10 ? "text-red-400" : "text-fg/70"
+                  className={`pp-timer font-mono text-lg ${
+                    secondsLeft <= 10 ? "is-urgent text-red-400" : "text-fg/70"
                   }`}
                 >
                   {secondsLeft}s
@@ -1351,7 +1367,7 @@ export default function Game({
                     onClick={requestHint}
                     disabled={hintPending}
                     title="Pídele una pista a la IA (hasta 3 por ronda)"
-                    className="rounded-md border border-edge px-3 py-1.5 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90 disabled:opacity-50"
+                    className="pp-btn rounded-md border border-edge px-3 py-1.5 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90 disabled:opacity-50"
                   >
                     {hintPending ? "💡 Pidiendo…" : "💡 Pista"}
                   </button>
@@ -1361,7 +1377,7 @@ export default function Game({
                     onClick={requestSkip}
                     disabled={skipPending}
                     title="Cambiar la palabra sin perder el turno"
-                    className="rounded-md border border-edge px-3 py-1.5 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90 disabled:opacity-50"
+                    className="pp-btn rounded-md border border-edge px-3 py-1.5 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90 disabled:opacity-50"
                   >
                     {skipPending ? "⏭ Cambiando…" : "⏭ Cambiar palabra"}
                   </button>
@@ -1370,7 +1386,7 @@ export default function Game({
                   <button
                     onClick={endRoundNow}
                     title="Terminar la ronda ahora y volver a la sala de espera"
-                    className="rounded-md border border-edge px-3 py-1.5 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90"
+                    className="pp-btn rounded-md border border-edge px-3 py-1.5 text-sm text-fg/60 hover:bg-fg/5 hover:text-fg/90"
                   >
                     Terminar ronda
                   </button>
@@ -1405,7 +1421,7 @@ export default function Game({
                 <button
                   onClick={() => startRound(isAiTurn)}
                   disabled={!meId}
-                  className="shrink-0 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+                  className="pp-btn-primary shrink-0 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
                 >
                   {isAiTurn ? "🤖 Empezar el turno de la IA" : "Empezar mi turno"}
                 </button>
@@ -1432,7 +1448,7 @@ export default function Game({
       </div>
 
       {/* Right: chat */}
-      <div className="h-[360px] min-w-0 w-full sm:h-[420px] lg:h-auto lg:w-96">
+      <div className="h-[360px] min-w-0 w-full sm:h-[420px] lg:col-start-2 lg:row-start-2 lg:h-auto lg:min-h-0 xl:col-start-3 xl:row-start-1">
         <Chat
           items={feed}
           // Hosting the AI's turn is a background job, not a turn of your own

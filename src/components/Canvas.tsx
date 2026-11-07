@@ -1,15 +1,8 @@
 "use client";
 
-import {
-  MutableRefObject,
-  PointerEvent as ReactPointerEvent,
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
-import { useChannel } from "@portalsdk/react";
-import Cursors, { CursorReporter } from "./Cursors";
+import { MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
+import { useChannel } from "@/lib/realtime";
+import Cursors, { CursorReporter, CursorTip } from "./Cursors";
 import { DrawMsg, StrokePoint, drawChannel } from "@/lib/types";
 
 const W = 900;
@@ -23,10 +16,27 @@ const LIGHT_INK = "#1f2328";
 const REST_COLORS = ["#6366f1", "#ef4444", "#22c55e", "#eab308", "#f97316"];
 const SIZES = [3, 6, 12, 22];
 
+// ---- Network pacing --------------------------------------------------------
+// One broadcast every FLUSH_MS while the pen is down (~12/s, was ~25/s plus a
+// separate cursor stream). Viewers replay each batch over a few frames, so the
+// line still grows smoothly on their screens instead of jumping in steps.
+const FLUSH_MS = 80;
+// Points closer than this (board pixels) add bytes, not detail.
+const MIN_WIRE_DIST = 2;
+// A received batch is drawn over roughly this many animation frames.
+const PLAYBACK_FRAMES = 4;
+
+type Queued =
+  | { kind: "stroke"; pts: StrokePoint[]; color: string; size: number; i: number }
+  | { kind: "clear" };
+
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
+
+const dist2 = (a: StrokePoint, b: StrokePoint) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+const mid = (a: StrokePoint, b: StrokePoint): StrokePoint => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 
 export default function Canvas({
   isDrawer,
@@ -48,24 +58,17 @@ export default function Canvas({
   drawStrokeRef?: MutableRefObject<((points: StrokePoint[]) => void) | null>;
   // The AI holds the pen this round: no manual drawing, no toolbar.
   aiDrawing?: boolean;
-  roomCode: string
+  roomCode: string;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
-  const drawing = useRef(false);
-  const lastSent = useRef<StrokePoint | null>(null);
-  const buffer = useRef<StrokePoint[]>([]);
-  const lastFlush = useRef(0);
   const cursorReportRef = useRef<CursorReporter | null>(null);
+  const cursorTipRef = useRef<CursorTip | null>(null);
 
   // ---- Page-scroll lock during an active stroke ------------------------------
-  // On phones the whole page scrolls (the layout is one tall column below
-  // `lg`), so anything that scrolls the document mid-gesture — a chat-driven
-  // reflow, a stray focus(), the browser itself — would slide the canvas out
-  // from under the pen and ruin the stroke. While a stroke is live we pin the
-  // scroll position and undo every window scroll event until the gesture
-  // ends. Event-driven: fires exactly when something tries to scroll, no
-  // polling/timers, and works the same on Safari iOS and Chrome Android.
+  // On phones the whole page scrolls, so anything that scrolls the document
+  // mid-gesture would slide the canvas out from under the pen. While a stroke
+  // is live we pin the scroll position and undo every window scroll event.
   const scrollPinRef = useRef<{ x: number; y: number } | null>(null);
   const restoreScrollPin = useCallback(() => {
     const pin = scrollPinRef.current;
@@ -81,50 +84,36 @@ export default function Canvas({
     scrollPinRef.current = null;
     window.removeEventListener("scroll", restoreScrollPin);
   }, [restoreScrollPin]);
-  // Canvas remounts per round (`key={round.id}`) — drop the listener even if
-  // the component goes away mid-stroke.
   useEffect(() => () => releasePageScroll(), [releasePageScroll]);
 
-  // Start dark (matches the server-rendered default, avoiding a hydration
-  // mismatch) and correct to the real theme once mounted — see the effect
-  // below, same pattern as ThemeToggle. The canvas paint itself has no such
-  // constraint (it's imperative, never part of SSR output), so `bgRef` can
-  // just hold the live value directly.
+  // Start dark (matches the server-rendered default) and correct to the real
+  // theme once mounted. `bgRef`/`inkRef` hold the live values for painting.
   const bgRef = useRef(DARK_BG);
-  // Tracks the theme's "auto" ink color, so a toggle can also swap any
-  // already-drawn strokes that used it — otherwise a stroke drawn in the
-  // dark theme's near-white default would stay near-white after the
-  // background flips to white too, and vanish.
   const inkRef = useRef(DARK_INK);
-  // Whether anything has been painted since the last clear — a toggle can
-  // safely repaint the background live if the board is still blank (nothing
-  // to lose); once there's a stroke on it, we leave pixels alone (see the
-  // theme-sync effect below, placed after clearCanvas/paintSegment exist).
   const hasContentRef = useRef(false);
   const [colors, setColors] = useState<string[]>([DARK_INK, ...REST_COLORS]);
   const [color, setColor] = useState(DARK_INK);
   const [size, setSize] = useState(SIZES[1]);
   // Eraser paints in the canvas background color. Over the wire it's the
-  // "erase" sentinel (like "auto") so each viewer erases against *their own*
-  // theme background rather than a literal hex that could smear a visible
-  // rectangle on a mismatched theme.
+  // "erase" sentinel so each viewer erases against their own background.
   const [erasing, setErasing] = useState(false);
 
-  const { send, me } = useChannel<DrawMsg>({
-    channelId: drawChannel(roomCode),
-    history: "none",
-    onMessage: (msg) => {
-      // Ignore our own echoes — the drawer already painted locally.
-      if (msg.sender?.id && me?.id && msg.sender.id === me.id) return;
-      applyRemote(msg.content);
-    },
-  });
+  const canDraw = isDrawer && !aiDrawing;
+
+  // The pointer handlers are native listeners bound once; they read the
+  // current tool through refs instead of re-binding on every state change.
+  const toolRef = useRef({ color, size, erasing, colors, canDraw });
+  toolRef.current = { color, size, erasing, colors, canDraw };
 
   const getCtx = useCallback(() => {
     const c = canvasRef.current;
     if (!c) return null;
     if (!ctxRef.current) {
-      const ctx = c.getContext("2d");
+      // `desynchronized` lets the browser show strokes without waiting for the
+      // page compositor (noticeably lower pen latency on Chrome/Android);
+      // `alpha: false` skips blending against the page since we always paint
+      // an opaque background.
+      const ctx = c.getContext("2d", { desynchronized: true, alpha: false });
       if (ctx) {
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
@@ -134,19 +123,27 @@ export default function Canvas({
     return ctxRef.current;
   }, []);
 
-  const paintSegment = useCallback(
-    (points: StrokePoint[], strokeColor: string, strokeSize: number) => {
+  // Draws a polyline smoothed through the midpoints of its segments.
+  const strokePath = useCallback(
+    (pts: StrokePoint[], strokeColor: string, strokeSize: number) => {
       const ctx = getCtx();
-      if (!ctx || points.length === 0) return;
+      if (!ctx || pts.length === 0) return;
       hasContentRef.current = true;
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = strokeSize;
       ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
-      if (points.length === 1) {
-        // A single tap — draw a dot.
-        ctx.lineTo(points[0].x + 0.1, points[0].y + 0.1);
+      ctx.moveTo(pts[0].x, pts[0].y);
+      if (pts.length === 1) {
+        ctx.lineTo(pts[0].x + 0.1, pts[0].y + 0.1); // a tap draws a dot
+      } else if (pts.length === 2) {
+        ctx.lineTo(pts[1].x, pts[1].y);
+      } else {
+        for (let i = 1; i < pts.length - 1; i++) {
+          const m = mid(pts[i], pts[i + 1]);
+          ctx.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
+        }
+        const last = pts[pts.length - 1];
+        ctx.lineTo(last.x, last.y);
       }
       ctx.stroke();
     },
@@ -161,22 +158,20 @@ export default function Canvas({
     ctx.fillRect(0, 0, W, H);
   }, [getCtx]);
 
-  // Pick up the current theme on mount, and again live if it's toggled
-  // mid-session. An empty board just gets a plain repaint. A board with
-  // strokes on it gets a smarter swap instead: there's no stored stroke
-  // history to redraw from, but every pixel that's still *exactly* the old
-  // background color, or the old "auto" ink color (a stroke drawn with the
-  // theme-default swatch — otherwise it'd stay near-white on a now-white
-  // background and vanish), gets recolored in place via getImageData.
-  // Explicitly-picked colors (red, indigo, ...) never match either and are
-  // left alone. Anti-aliased stroke edges are a blend and won't match
-  // exactly either, so they keep a faint tint toward the old colors —
-  // unnoticeable for a doodle.
+  // Pick up the current theme on mount, and again live if it's toggled. An
+  // empty board just repaints; a board with strokes gets its old background
+  // and old "auto" ink pixels recolored in place.
   useEffect(() => {
     function applyTheme(theme: string | null) {
       const light = theme === "light";
-      const newBg = light ? LIGHT_BG : DARK_BG;
-      const newInk = light ? LIGHT_INK : DARK_INK;
+      // Skins (and the classic light/dark theme) publish the board colors as
+      // CSS variables; fall back to the classic pair if they're missing.
+      const cs = getComputedStyle(document.documentElement);
+      const isHex = (v: string) => /^#[0-9a-f]{6}$/i.test(v);
+      const cssBg = cs.getPropertyValue("--pp-canvas-bg").trim();
+      const cssInk = cs.getPropertyValue("--pp-canvas-ink").trim();
+      const newBg = isHex(cssBg) ? cssBg.toLowerCase() : light ? LIGHT_BG : DARK_BG;
+      const newInk = isHex(cssInk) ? cssInk.toLowerCase() : light ? LIGHT_INK : DARK_INK;
       const oldBg = bgRef.current;
       const oldInk = inkRef.current;
       setColors([newInk, ...REST_COLORS]);
@@ -221,21 +216,66 @@ export default function Canvas({
     return () => window.removeEventListener("pictportal-theme", onThemeChange);
   }, [clearCanvas, getCtx]);
 
-  const applyRemote = useCallback(
-    (msg: DrawMsg) => {
-      if (msg.kind === "clear") clearCanvas();
-      else {
-        const resolved =
-          msg.color === "auto"
-            ? inkRef.current
-            : msg.color === "erase"
-              ? bgRef.current
-              : msg.color;
-        paintSegment(msg.points, resolved, msg.size);
-      }
+  // ---- Playback queue: received (and AI) strokes grow over a few frames ------
+  const queueRef = useRef<Queued[]>([]);
+  const rafRef = useRef(0);
+  const pump = useCallback(() => {
+    rafRef.current = 0;
+    const q = queueRef.current;
+    // If the network delivered a burst, catch up instantly on all but the
+    // newest batch so playback never lags behind the live drawing.
+    while (q.length > 2) {
+      const item = q.shift()!;
+      if (item.kind === "clear") clearCanvas();
+      else strokePath(item.pts.slice(Math.max(0, item.i - 1)), item.color, item.size);
+    }
+    const head = q[0];
+    if (!head) return;
+    if (head.kind === "clear") {
+      q.shift();
+      clearCanvas();
+    } else {
+      const step = Math.max(1, Math.ceil(head.pts.length / PLAYBACK_FRAMES));
+      const from = Math.max(0, head.i - 1);
+      const to = Math.min(head.pts.length, head.i + step);
+      strokePath(head.pts.slice(from, to), head.color, head.size);
+      head.i = to;
+      if (head.i >= head.pts.length) q.shift();
+    }
+    if (q.length) rafRef.current = requestAnimationFrame(pump);
+  }, [clearCanvas, strokePath]);
+  const enqueue = useCallback(
+    (item: Queued) => {
+      queueRef.current.push(item);
+      if (!rafRef.current) rafRef.current = requestAnimationFrame(pump);
     },
-    [clearCanvas, paintSegment],
+    [pump],
   );
+  useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+
+  const resolveColor = useCallback((c: string) => (c === "auto" ? inkRef.current : c === "erase" ? bgRef.current : c), []);
+
+  const { send, me } = useChannel<DrawMsg>({
+    channelId: drawChannel(roomCode),
+    history: "none",
+    onMessage: (msg) => {
+      // Ignore our own echoes — the drawer already painted locally.
+      if (msg.sender?.id && me?.id && msg.sender.id === me.id) return;
+      const c = msg.content;
+      if (c.kind === "clear") {
+        enqueue({ kind: "clear" });
+        return;
+      }
+      if (!c.points.length) return;
+      enqueue({ kind: "stroke", pts: c.points, color: resolveColor(c.color), size: c.size, i: 0 });
+      // While drawing, the pen tip *is* the cursor: move it from the stroke
+      // instead of paying for a separate cursor stream.
+      const tip = c.points[c.points.length - 1];
+      if (msg.sender?.id) cursorTipRef.current?.(msg.sender.id, { x: tip.x / W, y: tip.y / H });
+    },
+  });
+  const sendRef = useRef(send);
+  sendRef.current = send;
 
   // Init + expose snapshot getter.
   useEffect(() => {
@@ -244,12 +284,9 @@ export default function Canvas({
       snapshotRef.current = () => {
         const c = canvasRef.current;
         if (!c) return null;
-        // Nothing drawn since the last clear/round start: report "no snapshot"
-        // so the AI stays quiet instead of burning quota guessing at an empty
-        // board — which just spams the chat with "night", "blank", "nothing".
+        // Nothing drawn since the last clear: no snapshot, so the AI stays quiet.
         if (!hasContentRef.current) return null;
-        // Downscale to a small JPEG before sending to the AI — cuts the input
-        // token cost (and quota usage) massively vs. a full 900x600 PNG.
+        // Downscale to a small JPEG before sending to the AI.
         const scaled = document.createElement("canvas");
         scaled.width = 320;
         scaled.height = 213;
@@ -266,122 +303,197 @@ export default function Canvas({
     };
   }, [clearCanvas, snapshotRef]);
 
-  // Imperative hook for AI-drawn strokes: paint locally and fan out, using
-  // the theme-relative "auto" ink so every viewer sees it against their own
-  // background (same reason the pointer path sends "auto").
+  // Imperative hook for AI-drawn strokes: animate locally and fan out, using
+  // the theme-relative "auto" ink so every viewer sees it on their background.
   useEffect(() => {
     if (!drawStrokeRef) return;
     drawStrokeRef.current = (points: StrokePoint[]) => {
       if (points.length === 0) return;
-      paintSegment(points, colors[0], size);
+      enqueue({ kind: "stroke", pts: points, color: inkRef.current, size, i: 0 });
       void send({ content: { kind: "stroke", points, color: "auto", size } });
     };
     return () => {
       drawStrokeRef.current = null;
     };
-  }, [drawStrokeRef, paintSegment, send, colors, size]);
+  }, [drawStrokeRef, enqueue, send, size]);
 
-  function toCanvasPoint(e: ReactPointerEvent<HTMLCanvasElement>): StrokePoint {
-    const rect = e.currentTarget.getBoundingClientRect();
-    return {
+  // ---- Pen input: native, coalesced, low-latency ---------------------------
+  useEffect(() => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    // pointerrawupdate delivers moves as soon as the OS has them (Chrome),
+    // ahead of the frame-aligned pointermove. Fall back where unsupported.
+    const raw = "onpointerrawupdate" in cv;
+    let rect = cv.getBoundingClientRect();
+    let pointer: number | null = null;
+    let prev: StrokePoint | null = null; // last raw point painted
+    let midPt: StrokePoint | null = null; // where the smoothed line currently ends
+    let wire: StrokePoint[] = []; // points waiting to be broadcast
+    let tail: StrokePoint | null = null; // last point already broadcast (overlap)
+    let lastWire: StrokePoint | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const toPt = (e: PointerEvent): StrokePoint => ({
       x: ((e.clientX - rect.left) / rect.width) * W,
       y: ((e.clientY - rect.top) / rect.height) * H,
+    });
+    const paintColor = () => (toolRef.current.erasing ? bgRef.current : toolRef.current.color);
+    const wireColor = () => {
+      const t = toolRef.current;
+      // The default swatch is theme-relative: send "auto" and let each viewer
+      // resolve it against their own background.
+      return t.erasing ? "erase" : t.color === t.colors[0] ? "auto" : t.color;
     };
-  }
 
-  function flush(force = false) {
-    const now = performance.now();
-    if (!force && now - lastFlush.current < 40) return;
-    if (buffer.current.length === 0) return;
-    const points = buffer.current;
-    buffer.current = [];
-    lastFlush.current = now;
-    // The "auto" ink swatch (colors[0]) is only meaningful relative to
-    // *your own* canvas background — sending its literal hex would paint a
-    // near-black stroke on a light-theme viewer as near-black-on-black if
-    // they're in dark mode (or the reverse). Send the sentinel instead, and
-    // let each viewer resolve it against their own local theme on receipt.
-    const wireColor = erasing ? "erase" : color === colors[0] ? "auto" : color;
-    void send({ content: { kind: "stroke", points, color: wireColor, size } });
-  }
+    const flush = () => {
+      timer = null;
+      if (!wire.length) return;
+      // Each batch starts at the previous batch's last point, so viewers get
+      // one continuous line instead of tiny gaps between batches.
+      const points = tail ? [tail, ...wire] : wire;
+      tail = points[points.length - 1];
+      wire = [];
+      void sendRef.current({ content: { kind: "stroke", points, color: wireColor(), size: toolRef.current.size } });
+    };
+    const scheduleFlush = () => {
+      if (!timer) timer = setTimeout(flush, FLUSH_MS);
+    };
+    const queueWire = (p: StrokePoint, force = false) => {
+      if (!force && lastWire && dist2(p, lastWire) < MIN_WIRE_DIST * MIN_WIRE_DIST) return;
+      const r = { x: Math.round(p.x), y: Math.round(p.y) };
+      wire.push(r);
+      lastWire = r;
+      scheduleFlush();
+    };
 
-  const canDraw = isDrawer && !aiDrawing;
+    const start = (p: StrokePoint) => {
+      const ctx = getCtx();
+      if (!ctx) return;
+      hasContentRef.current = true;
+      prev = p;
+      midPt = p;
+      ctx.strokeStyle = paintColor();
+      ctx.lineWidth = toolRef.current.size;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + 0.1, p.y + 0.1);
+      ctx.stroke();
+      tail = null;
+      lastWire = null;
+      wire = [];
+      queueWire(p, true);
+    };
+    const extend = (p: StrokePoint) => {
+      if (!prev || !midPt) return;
+      if (dist2(p, prev) < 0.25) return;
+      const ctx = getCtx();
+      if (!ctx) return;
+      const m = mid(prev, p);
+      ctx.strokeStyle = paintColor();
+      ctx.lineWidth = toolRef.current.size;
+      ctx.beginPath();
+      ctx.moveTo(midPt.x, midPt.y);
+      ctx.quadraticCurveTo(prev.x, prev.y, m.x, m.y);
+      ctx.stroke();
+      midPt = m;
+      prev = p;
+      queueWire(p);
+    };
+    const end = () => {
+      if (pointer === null) return;
+      pointer = null;
+      const ctx = getCtx();
+      if (ctx && prev && midPt) {
+        ctx.beginPath();
+        ctx.moveTo(midPt.x, midPt.y);
+        ctx.lineTo(prev.x, prev.y);
+        ctx.stroke();
+        queueWire(prev, true);
+      }
+      if (timer) clearTimeout(timer);
+      flush();
+      prev = midPt = null;
+      tail = null;
+      releasePageScroll();
+    };
 
-  function onPointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!canDraw) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    drawing.current = true;
-    // The gesture belongs to the canvas from here on: pin the page scroll
-    // until the stroke ends (see the scroll-lock block above).
-    holdPageScroll();
-    const p = toCanvasPoint(e);
-    lastSent.current = p;
-    buffer.current = [p];
-    paintSegment([p], erasing ? bgRef.current : color, size);
-  }
+    const onDown = (e: PointerEvent) => {
+      if (!toolRef.current.canDraw || pointer !== null) return;
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      e.preventDefault();
+      rect = cv.getBoundingClientRect();
+      cv.setPointerCapture(e.pointerId);
+      pointer = e.pointerId;
+      holdPageScroll();
+      start(toPt(e));
+    };
+    const onStrokeMove = (e: PointerEvent) => {
+      if (pointer !== e.pointerId) return;
+      const list = typeof e.getCoalescedEvents === "function" ? e.getCoalescedEvents() : [];
+      if (list.length) for (const ev of list) extend(toPt(ev));
+      else extend(toPt(e));
+    };
+    const onHover = (e: PointerEvent) => {
+      if (!toolRef.current.canDraw) return;
+      if (pointer === null) {
+        // Only report the hovering pen; while drawing, viewers follow the stroke tip.
+        rect = cv.getBoundingClientRect();
+        const p = toPt(e);
+        cursorReportRef.current?.({ x: p.x / W, y: p.y / H });
+      } else if (!raw) {
+        onStrokeMove(e);
+      }
+    };
+    const onLeave = () => {
+      if (pointer === null) cursorReportRef.current?.(null);
+    };
 
-  function onPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
-    if (!canDraw) return;
-    const p = toCanvasPoint(e);
-    // El cursor se reporta aunque no se esté trazando: la gracia es ver el
-    // lápiz moverse y dudar antes de dibujar, no solo mientras pinta.
-    cursorReportRef.current?.({ x: p.x / W, y: p.y / H });
-    if (!drawing.current) return;
-    // Paint locally through the last point for a continuous line.
-    if (lastSent.current) paintSegment([lastSent.current, p], erasing ? bgRef.current : color, size);
-    buffer.current.push(p);
-    lastSent.current = p;
-    flush();
-  }
-
-  function onPointerLeaveCanvas() {
-    cursorReportRef.current?.(null);
-    endStroke();
-  }
-
-  function endStroke() {
-    if (!canDraw || !drawing.current) return;
-    drawing.current = false;
-    flush(true);
-    lastSent.current = null;
-    releasePageScroll();
-  }
+    cv.addEventListener("pointerdown", onDown);
+    cv.addEventListener("pointermove", onHover);
+    if (raw) cv.addEventListener("pointerrawupdate" as "pointermove", onStrokeMove);
+    cv.addEventListener("pointerup", end);
+    cv.addEventListener("pointercancel", end);
+    cv.addEventListener("lostpointercapture", end);
+    cv.addEventListener("pointerleave", onLeave);
+    return () => {
+      cv.removeEventListener("pointerdown", onDown);
+      cv.removeEventListener("pointermove", onHover);
+      if (raw) cv.removeEventListener("pointerrawupdate" as "pointermove", onStrokeMove);
+      cv.removeEventListener("pointerup", end);
+      cv.removeEventListener("pointercancel", end);
+      cv.removeEventListener("lostpointercapture", end);
+      cv.removeEventListener("pointerleave", onLeave);
+      if (timer) clearTimeout(timer);
+    };
+  }, [getCtx, holdPageScroll, releasePageScroll]);
 
   function onClear() {
+    queueRef.current = [];
     clearCanvas();
     void send({ content: { kind: "clear" } });
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="relative overflow-hidden rounded-xl border border-edge bg-ink">
+    <div className="pp-board-wrap flex flex-col gap-3">
+      <div className="pp-board relative overflow-hidden rounded-xl border border-edge bg-ink">
         <canvas
           ref={canvasRef}
           width={W}
           height={H}
           className="aspect-[3/2] w-full touch-none select-none"
-          style={{ cursor: canDraw ? "crosshair" : "not-allowed" }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endStroke}
-          onPointerLeave={onPointerLeaveCanvas}
-          onPointerCancel={onPointerLeaveCanvas}
+          style={{ cursor: canDraw ? "crosshair" : "not-allowed", WebkitTouchCallout: "none" }}
+          aria-label={canDraw ? "Lienzo: dibuja aquí" : "Lienzo del dibujante"}
         />
-        <Cursors
-          roomCode={roomCode}
-          name={name}
-          enabled={canDraw}
-          reportRef={cursorReportRef}
-        />
+        <Cursors roomCode={roomCode} name={name} enabled={canDraw} reportRef={cursorReportRef} tipRef={cursorTipRef} />
         {(aiDrawing || !isDrawer) && (
-          <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-black/50 px-3 py-1 text-xs text-white/70">
+          <div className="pp-board-tag pointer-events-none absolute right-3 top-3 rounded-full bg-black/50 px-3 py-1 text-xs text-white/70">
             {aiDrawing ? "🤖 La IA está dibujando" : "mirando"}
           </div>
         )}
       </div>
 
       {canDraw && (
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="pp-toolbar flex flex-wrap items-center gap-3">
           <div className="flex gap-2">
             {colors.map((c) => (
               <button
@@ -391,7 +503,8 @@ export default function Canvas({
                   setErasing(false);
                 }}
                 aria-label={`color ${c}`}
-                className={`h-7 w-7 rounded-full border-2 ${
+                aria-pressed={color === c && !erasing}
+                className={`pp-swatch h-9 w-9 rounded-full border-2 sm:h-7 sm:w-7 ${
                   color === c && !erasing ? "border-fg" : "border-transparent"
                 }`}
                 style={{ background: c }}
@@ -400,8 +513,9 @@ export default function Canvas({
             <button
               onClick={() => setErasing((v) => !v)}
               aria-label="borrador"
+              aria-pressed={erasing}
               title="Borrador"
-              className={`grid h-7 w-7 place-items-center rounded-full border-2 text-sm ${
+              className={`pp-tool grid h-9 w-9 place-items-center rounded-full border-2 text-sm sm:h-7 sm:w-7 ${
                 erasing ? "border-fg bg-fg/10" : "border-edge"
               }`}
             >
@@ -413,20 +527,19 @@ export default function Canvas({
               <button
                 key={s}
                 onClick={() => setSize(s)}
-                className={`grid h-8 w-8 place-items-center rounded-md border ${
+                aria-label={`grosor ${s}`}
+                aria-pressed={size === s}
+                className={`pp-tool grid h-9 w-9 place-items-center rounded-md border sm:h-8 sm:w-8 ${
                   size === s ? "border-accent bg-accent/20" : "border-edge"
                 }`}
               >
-                <span
-                  className="rounded-full bg-fg"
-                  style={{ width: s, height: s }}
-                />
+                <span className="rounded-full bg-fg" style={{ width: s, height: s }} />
               </button>
             ))}
           </div>
           <button
             onClick={onClear}
-            className="ml-auto rounded-md border border-edge px-3 py-1.5 text-sm text-fg/80 hover:bg-fg/5"
+            className="pp-tool ml-auto rounded-md border border-edge px-3 py-1.5 text-sm text-fg/80 hover:bg-fg/5"
           >
             Limpiar
           </button>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useChannel } from "@portalsdk/react";
+import { useChannel } from "@/lib/realtime";
 import { ReactionMsg, reactionsChannel } from "@/lib/types";
 
 // Emojis que cualquiera lanza y flotan en la pantalla de todos.
@@ -67,7 +67,7 @@ export default function Reactions({ roomCode, name }: { roomCode: string; name: 
             key={e}
             onClick={() => react(e)}
             aria-label={`Reaccionar con ${e}`}
-            className="rounded-md px-1.5 py-1 text-lg leading-none transition hover:scale-125 hover:bg-fg/5"
+            className="pp-icon-btn grid h-10 w-10 place-items-center rounded-md text-lg leading-none transition hover:scale-125 hover:bg-fg/5"
           >
             {e}
           </button>
