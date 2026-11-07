@@ -147,7 +147,7 @@ export default function Lobby({
         <h1 className="pp-brand mt-2 text-3xl font-extrabold tracking-tight">
           Pict<span className="text-accent">-Portal</span>
         </h1>
-        <p className="mt-2 text-center text-sm text-fg/50">
+        <p className="pp-tagline mt-2 text-center text-sm text-fg/50">
           Pictionary multijugador en tiempo real, con una IA que adivina tus trazos.
         </p>
 

@@ -120,6 +120,24 @@ function loadFonts(skin: Skin) {
   document.head.appendChild(link);
 }
 
+export type ThemeMode = "light" | "dark";
+
+/** Light/dark mode, shared by the header toggle and the design picker. */
+export function applyThemeMode(mode: ThemeMode) {
+  document.documentElement.setAttribute("data-theme", mode);
+  try {
+    localStorage.setItem("theme", mode);
+  } catch {
+    /* private browsing / storage disabled — theme just won't persist */
+  }
+  // The canvas paints imperatively, so it listens for this to recolor itself.
+  window.dispatchEvent(new CustomEvent("pictportal-theme", { detail: mode }));
+}
+
+export function currentThemeMode(): ThemeMode {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
 /** Applies and persists the prefs, then tells the canvas to re-read its colors. */
 export function applyPrefs(prefs: SkinPrefs) {
   const root = document.documentElement;

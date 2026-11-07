@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MotionLevel, SKINS, SkinPrefs, applyPrefs, defaultPrefs, getSkin, readPrefs } from "@/lib/skins";
+import { createPortal } from "react-dom";
+import {
+  MotionLevel,
+  SKINS,
+  SkinPrefs,
+  ThemeMode,
+  applyPrefs,
+  applyThemeMode,
+  currentThemeMode,
+  defaultPrefs,
+  getSkin,
+  readPrefs,
+} from "@/lib/skins";
 
 const MOTION: { id: MotionLevel; label: string }[] = [
   { id: "full", label: "Completas" },
@@ -14,15 +26,22 @@ export default function SkinPicker({ label = false }: { label?: boolean }) {
   // mismatch; the saved choice is already on <html> from the init script.
   const [prefs, setPrefs] = useState<SkinPrefs>(defaultPrefs);
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<ThemeMode>("dark");
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setPrefs(readPrefs());
-    // Another picker (lobby vs. game header) may change it.
+    setMode(currentThemeMode());
+    // Another picker (lobby vs. game header) or the header toggle may change these.
     const sync = (e: Event) => setPrefs((e as CustomEvent<SkinPrefs>).detail);
+    const syncMode = (e: Event) => setMode((e as CustomEvent<string>).detail === "light" ? "light" : "dark");
     window.addEventListener("pictportal-skin", sync);
-    return () => window.removeEventListener("pictportal-skin", sync);
+    window.addEventListener("pictportal-theme", syncMode);
+    return () => {
+      window.removeEventListener("pictportal-skin", sync);
+      window.removeEventListener("pictportal-theme", syncMode);
+    };
   }, []);
 
   useEffect(() => {
@@ -77,7 +96,11 @@ export default function SkinPicker({ label = false }: { label?: boolean }) {
         {label && <span>Diseño</span>}
       </button>
 
-      {open && (
+      {/* Rendered into <body>: an ancestor with backdrop-filter/transform (some
+          skins' panels) would otherwise become the containing block of this
+          fixed sheet and drag it away from the viewport. */}
+      {open &&
+        createPortal(
         <div
           ref={sheetRef}
           role="dialog"
@@ -98,6 +121,31 @@ export default function SkinPicker({ label = false }: { label?: boolean }) {
             >
               ✕
             </button>
+          </div>
+
+          <h3 className="mb-2 mt-4 text-[11px] font-bold uppercase tracking-wider text-fg/60">Modo</h3>
+          <div className="grid grid-cols-2 gap-1 rounded-xl border border-edge p-1" role="group" aria-label="Modo claro u oscuro">
+            {(
+              [
+                { id: "light", label: "☀️ Claro" },
+                { id: "dark", label: "🌙 Oscuro" },
+              ] as { id: ThemeMode; label: string }[]
+            ).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                aria-pressed={m.id === mode}
+                onClick={() => {
+                  setMode(m.id);
+                  applyThemeMode(m.id);
+                }}
+                className={`h-10 rounded-lg text-sm font-semibold transition ${
+                  m.id === mode ? "bg-fg text-ink" : "text-fg/70 hover:text-fg"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
 
           <h3 className="mb-2 mt-4 text-[11px] font-bold uppercase tracking-wider text-fg/60">Estilo</h3>
@@ -165,8 +213,9 @@ export default function SkinPicker({ label = false }: { label?: boolean }) {
               </button>
             ))}
           </div>
-        </div>
-      )}
+        </div>,
+        document.body,
+        )}
     </>
   );
 }
