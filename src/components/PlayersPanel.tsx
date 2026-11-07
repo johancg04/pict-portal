@@ -160,8 +160,8 @@ export default function PlayersPanel({
   }
 
   return (
-    <div className="flex w-full min-w-0 flex-col gap-2 rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4 lg:h-full lg:w-56 lg:shrink-0">
-      <span className="text-xs uppercase tracking-wide text-fg/40">
+    <div className="pp-panel pp-players flex w-full min-w-0 flex-col gap-2 rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4 lg:col-start-2 lg:row-start-1 lg:max-h-[40dvh] lg:overflow-y-auto xl:col-start-1 xl:row-start-1 xl:h-full xl:max-h-none">
+      <span className="pp-panel-title text-xs uppercase tracking-wide text-fg/40">
         Jugadores · {roster.length}
       </span>
       <ul className="flex flex-col">
@@ -176,7 +176,7 @@ export default function PlayersPanel({
             >
               <div className="min-h-0 overflow-hidden">
                 <div
-                  className={`flex items-center gap-2 py-1.5 transition-transform duration-300 ease-out ${
+                  className={`pp-player ${p.isDrawer ? "is-drawing" : ""} flex items-center gap-2 py-1.5 transition-transform duration-300 ease-out ${
                     open ? "translate-x-0" : "-translate-x-2"
                   }`}
                 >
@@ -259,7 +259,7 @@ export default function PlayersPanel({
         {canToggleAi && (
           <button
             onClick={onToggleAi}
-            className={`w-full rounded-md border px-2 py-1 text-xs transition ${
+            className={`w-full rounded-md border px-2 py-2 text-xs transition ${
               showHint
                 ? "border-accent/60 text-fg/90"
                 : "border-edge text-fg/60 hover:bg-fg/5 hover:text-fg/90"

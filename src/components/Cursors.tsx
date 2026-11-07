@@ -1,7 +1,7 @@
 "use client";
 
 import { MutableRefObject, useCallback, useEffect, useRef, useState } from "react";
-import { useChannel } from "@portalsdk/react";
+import { useChannel } from "@/lib/realtime";
 import { CursorMsg, cursorChannel } from "@/lib/types";
 import { colorForName } from "@/lib/players";
 
@@ -13,18 +13,24 @@ import { colorForName } from "@/lib/players";
 // — el SDK descarta en silencio los ephemeral entrantes, así que ese flag no
 // sirve para nada que otro cliente deba ver (verificado contra el backend).
 
-const SEND_EVERY_MS = 55; // ~18 actualizaciones por segundo
+// Solo se envía mientras el lápiz flota sin trazar: al dibujar, los demás
+// siguen la punta del trazo (ver `tipRef`), así que no hace falta un segundo
+// flujo de mensajes. ~10 por segundo bastan con la transición CSS de abajo.
+const SEND_EVERY_MS = 100;
 const STALE_MS = 2500; // sin novedades, el cursor se desvanece
 
 type Remote = { x: number; y: number; name: string; at: number };
 
 export type CursorReporter = (p: { x: number; y: number } | null) => void;
+/** Mueve el cursor de un jugador remoto a la punta de su trazo. */
+export type CursorTip = (id: string, p: { x: number; y: number }) => void;
 
 export default function Cursors({
   roomCode,
   name,
   enabled,
   reportRef,
+  tipRef,
 }: {
   roomCode: string;
   name: string;
@@ -32,10 +38,30 @@ export default function Cursors({
   enabled: boolean;
   /** El lienzo deja aquí la función para reportar la posición del puntero. */
   reportRef: MutableRefObject<CursorReporter | null>;
+  /** Aquí se deja la función para mover un cursor remoto desde su trazo. */
+  tipRef?: MutableRefObject<CursorTip | null>;
 }) {
   const [remotes, setRemotes] = useState<Map<string, Remote>>(() => new Map());
   const lastSentAt = useRef(0);
   const pending = useRef<{ x: number; y: number } | null>(null);
+  const trailing = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Un trazo recibido actualiza el cursor de su autor (si ya sabemos su nombre).
+  useEffect(() => {
+    if (!tipRef) return;
+    tipRef.current = (id, p) =>
+      setRemotes((prev) => {
+        const r = prev.get(id);
+        if (!r) return prev;
+        return new Map(prev).set(id, { ...r, x: p.x, y: p.y, at: Date.now() });
+      });
+    return () => {
+      tipRef.current = null;
+    };
+  }, [tipRef]);
+  useEffect(() => () => {
+    if (trailing.current) clearTimeout(trailing.current);
+  }, []);
 
   const { send } = useChannel<CursorMsg>({
     channelId: cursorChannel(roomCode),
@@ -63,12 +89,28 @@ export default function Cursors({
     (p) => {
       if (!p) {
         pending.current = null;
+        if (trailing.current) clearTimeout(trailing.current);
+        trailing.current = null;
         void send({ content: { kind: "gone" } });
         return;
       }
       pending.current = p;
       const now = Date.now();
-      if (now - lastSentAt.current < SEND_EVERY_MS) return;
+      const wait = SEND_EVERY_MS - (now - lastSentAt.current);
+      if (wait > 0) {
+        // Throttled: make sure the *last* position still goes out, otherwise
+        // a pen that stops moving would show up short of where it rests.
+        if (!trailing.current) {
+          trailing.current = setTimeout(() => {
+            trailing.current = null;
+            const last = pending.current;
+            if (!last) return;
+            lastSentAt.current = Date.now();
+            void send({ content: { kind: "move", x: last.x, y: last.y, name } });
+          }, wait);
+        }
+        return;
+      }
       lastSentAt.current = now;
       void send({ content: { kind: "move", x: p.x, y: p.y, name } });
     },

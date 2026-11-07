@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pict-Portal · Laboratorio de diseño</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style>
+  :root { --bg: #0d0f14; --panel: #151924; --edge: #262c3b; --text: #eceef3; --muted: #a2a9ba; --accent: #8b9cff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, system-ui, sans-serif; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 32px 20px 80px; }
+  header h1 { margin: 0 0 8px; font-size: clamp(26px, 5vw, 40px); letter-spacing: -0.02em; }
+  header p { margin: 0; color: var(--muted); max-width: 70ch; line-height: 1.6; }
+  .tips { margin: 20px 0 0; padding: 16px 18px; border: 1px solid var(--edge); border-radius: 14px; background: var(--panel); color: var(--muted); line-height: 1.7; font-size: 14px; }
+  .tips strong { color: var(--text); }
+  .tips code { background: #0b0d12; border: 1px solid var(--edge); padding: 1px 6px; border-radius: 6px; color: var(--text); }
+  section { margin-top: 48px; }
+  .sec-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; margin-bottom: 16px; }
+  .sec-head h2 { margin: 0; font-size: 24px; }
+  .sec-head p { margin: 6px 0 0; color: var(--muted); max-width: 62ch; line-height: 1.55; font-size: 14px; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; margin-bottom: 8px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .seg { display: inline-flex; padding: 3px; border-radius: 12px; border: 1px solid var(--edge); background: var(--panel); flex-wrap: wrap; }
+  .seg button { height: 38px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--text); color: var(--bg); }
+  .open { height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 12px; border: 1px solid var(--edge); text-decoration: none; font-size: 13px; font-weight: 600; }
+  .stage { display: grid; place-items: center; padding: 20px; border-radius: 18px; border: 1px solid var(--edge); background: repeating-conic-gradient(#11141c 0% 25%, #0e1118 0% 50%) 0 0 / 24px 24px; }
+  .device { position: relative; overflow: hidden; border-radius: 22px; border: 8px solid #2a2f3d; background: #000; box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5); }
+  .device.is-desktop { border-radius: 10px; border-width: 6px; }
+  .device iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #fff; }
+  .size-note { margin-top: 10px; text-align: center; font-size: 12px; color: var(--muted); }
+  .shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 18px; }
+  .shots figure { margin: 0; padding: 10px; border: 1px solid var(--edge); border-radius: 14px; background: var(--panel); }
+  .shots img { display: block; width: 100%; height: auto; border-radius: 8px; }
+  .shots figcaption { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .warn { margin-top: 10px; font-size: 13px; color: #f6c177; }
+  ul.feat { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+  .hero { margin-top: 36px; }
+  .mocks { display: flex; gap: 22px; overflow-x: auto; padding: 24px 20px 28px; border-radius: 22px; border: 1px solid var(--edge);
+    background: radial-gradient(ellipse at 50% 0%, #1b2140, #0d0f14 70%); scroll-snap-type: x mandatory; }
+  .mock { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 12px; scroll-snap-align: center; text-decoration: none; color: var(--text); }
+  .mock__phone { position: relative; width: 252px; height: 538px; border-radius: 34px; border: 9px solid #23283a; background: #000; overflow: hidden;
+    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.55), inset 0 0 0 2px #3a4157; animation: float-phone 6s ease-in-out infinite; }
+  .mock:nth-child(2) .mock__phone { animation-delay: -1.5s; } .mock:nth-child(3) .mock__phone { animation-delay: -3s; } .mock:nth-child(4) .mock__phone { animation-delay: -4.5s; }
+  @keyframes float-phone { 50% { transform: translateY(-10px) rotate(-1deg); } }
+  .mock__phone::before { content: ""; position: absolute; top: 6px; left: 50%; width: 70px; height: 18px; margin-left: -35px; border-radius: 10px; background: #000; z-index: 2; }
+  .mock__phone iframe { position: absolute; left: 0; top: 0; width: 390px; height: 844px; border: 0; transform: scale(0.5995); transform-origin: 0 0; pointer-events: none; }
+  .mock b { font-size: 15px; }
+  .mock span { font-size: 12px; color: var(--muted); }
+  .mock:hover .mock__phone { box-shadow: 0 30px 60px rgba(0, 0, 0, 0.55), 0 0 0 3px var(--accent); }
+  @media (prefers-reduced-motion: reduce) { .mock__phone { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Pict-Portal · Laboratorio de diseño</h1>
+    <p>El juego actual y cuatro propuestas animadas y jugables. Cada propuesta es una página real que se adapta a móvil, tablet (vertical y horizontal) y escritorio con el mismo código: cambia el dispositivo en el selector o abre la página en tu teléfono.</p>
+    <div class="tips">
+      <strong>Cómo probarlas:</strong> usa <strong>Adivinar / Dibujar</strong> arriba para cambiar de rol.
+      Como adivinador, la respuesta es <code>guitarra</code> (escríbela para ver la celebración), pide <strong>Pista</strong> y lanza reacciones.
+      Como dibujante, dibuja con el dedo o el ratón, cambia colores y grosor, deshaz y limpia.
+      Toca un comentario para darle <strong>me gusta</strong>. El <strong>ranking</strong> se reordena animado cuando alguien suma puntos.<br>
+      <strong>Personaliza el tema</strong> con el botón de paleta arriba a la derecha de cada propuesta: cambia de estilo, elige una de 4 paletas o tu propio color,
+      ajusta las animaciones (completas, suaves o ninguna), apaga el fondo animado o activa la partida automática. Se guarda en el navegador.
+    </div>
+  </header>
+
+  <section class="hero" id="mockups">
+    <div class="sec-head">
+      <div>
+        <span class="tag" style="background:#3a2a0b;color:#ffe08a">En vivo</span>
+        <h2>Mockups animados</h2>
+        <p>Cada teléfono juega una partida completa solo: adivina, acierta, sube en el ranking, dibuja y recibe reacciones. Toca uno para abrirlo y jugar tú.</p>
+      </div>
+    </div>
+    <div class="mocks">
+      <a class="mock" href="1-neon.html" target="_blank"><span class="mock__phone"><iframe title="Mockup animado Neón" src="1-neon.html?demo=1" loading="lazy" tabindex="-1"></iframe></span><b>Neón</b><span>Synthwave</span></a>
+      <a class="mock" href="2-orbita.html" target="_blank"><span class="mock__phone"><iframe title="Mockup animado Órbita" src="2-orbita.html?demo=1" loading="lazy" tabindex="-1"></iframe></span><b>Órbita</b><span>Cristal holográfico</span></a>
+      <a class="mock" href="3-comando.html" target="_blank"><span class="mock__phone"><iframe title="Mockup animado Comando" src="3-comando.html?demo=1" loading="lazy" tabindex="-1"></iframe></span><b>Comando</b><span>HUD de nave</span></a>
+      <a class="mock" href="4-grieta.html" target="_blank"><span class="mock__phone"><iframe title="Mockup animado Grieta" src="4-grieta.html?demo=1" loading="lazy" tabindex="-1"></iframe></span><b>Grieta</b><span>Battle royale</span></a>
+    </div>
+  </section>
+
+  <section id="actual">
+    <div class="sec-head">
+      <div>
+        <span class="tag" style="background:#2a2f3d;color:#cfd5e4">Hoy</span>
+        <h2>Así se ve el juego ahora</h2>
+        <p>Vista en vivo de <code>localhost:3000</code> (necesita <code>npm run dev</code>). Debajo, capturas fijas del lobby y de una partida.</p>
+      </div>
+      <div class="controls" data-for="f0">
+        <div class="seg" role="group" aria-label="Dispositivo">
+          <button type="button" data-w="390" data-h="844" aria-pressed="true">Móvil</button>
+          <button type="button" data-w="820" data-h="1180" aria-pressed="false">Tablet V</button>
+          <button type="button" data-w="1180" data-h="820" aria-pressed="false">Tablet H</button>
+          <button type="button" data-w="1440" data-h="900" aria-pressed="false">Escritorio</button>
+        </div>
+        <a class="open" href="http://localhost:3000" target="_blank" rel="noopener">Abrir</a>
+      </div>
+    </div>
+    <div class="stage"><div class="device" id="f0"><iframe title="Juego actual" src="http://localhost:3000" loading="lazy"></iframe></div></div>
+    <div class="size-note" data-note="f0"></div>
+    <div class="shots" id="shots"></div>
+  </section>
+
+  <section id="p1">
+    <div class="sec-head">
+      <div>
+        <span class="tag" style="background:#2b0f3a;color:#f5b4ff">Propuesta 1</span>
+        <h2>Neón · arena synthwave</h2>
+        <p>Noche ochentera: piso de rejilla en movimiento, títulos de neón que parpadean, borde de energía girando alrededor del lienzo y trazos que brillan.</p>
+        <ul class="feat"><li>Fichas de letras que entran rebotando y saltan al acertar</li><li>Escáner de la IA que barre el lienzo cuando analiza</li><li>Temporizador circular que se vuelve rosa y late al final</li></ul>
+      </div>
+      <div class="controls" data-for="f1">
+        <div class="seg" role="group" aria-label="Dispositivo">
+          <button type="button" data-w="390" data-h="844" aria-pressed="true">Móvil</button>
+          <button type="button" data-w="820" data-h="1180" aria-pressed="false">Tablet V</button>
+          <button type="button" data-w="1180" data-h="820" aria-pressed="false">Tablet H</button>
+          <button type="button" data-w="1440" data-h="900" aria-pressed="false">Escritorio</button>
+        </div>
+        <a class="open" href="1-neon.html" target="_blank">Pantalla completa</a>
+      </div>
+    </div>
+    <div class="stage"><div class="device" id="f1"><iframe title="Propuesta 1 Neón" src="1-neon.html" loading="lazy"></iframe></div></div>
+    <div class="size-note" data-note="f1"></div>
+  </section>
+
+  <section id="p2">
+    <div class="sec-head">
+      <div>
+        <span class="tag" style="background:#0f2b33;color:#9ff3e4">Propuesta 2</span>
+        <h2>Órbita · cristal holográfico</h2>
+        <p>Espacio profundo con estrellas y auroras en movimiento, paneles de vidrio esmerilado, un lienzo que flota con borde iridiscente y un dock flotante en móvil.</p>
+        <ul class="feat"><li>Temporizador con una "luna" que orbita</li><li>Avatar de la IA como orbe giratorio y podio en vivo</li><li>Brillo que recorre las fichas de letras</li></ul>
+      </div>
+      <div class="controls" data-for="f2">
+        <div class="seg" role="group" aria-label="Dispositivo">
+          <button type="button" data-w="390" data-h="844" aria-pressed="true">Móvil</button>
+          <button type="button" data-w="820" data-h="1180" aria-pressed="false">Tablet V</button>
+          <button type="button" data-w="1180" data-h="820" aria-pressed="false">Tablet H</button>
+          <button type="button" data-w="1440" data-h="900" aria-pressed="false">Escritorio</button>
+        </div>
+        <a class="open" href="2-orbita.html" target="_blank">Pantalla completa</a>
+      </div>
+    </div>
+    <div class="stage"><div class="device" id="f2"><iframe title="Propuesta 2 Órbita" src="2-orbita.html" loading="lazy"></iframe></div></div>
+    <div class="size-note" data-note="f2"></div>
+  </section>
+
+  <section id="p3">
+    <div class="sec-head">
+      <div>
+        <span class="tag" style="background:#0d2a19;color:#8dffb8">Propuesta 3</span>
+        <h2>Comando · HUD de nave</h2>
+        <p>Consola sci-fi de fósforo verde: marcos con esquinas de mira, líneas de escaneo, radar de la IA sobre el lienzo y un chat que se escribe como terminal.</p>
+        <ul class="feat"><li>Los paneles "se encienden" al cargar</li><li>Temporizador segmentado con alarma en rojo</li><li>Panel de análisis con las hipótesis y la confianza de la IA</li></ul>
+      </div>
+      <div class="controls" data-for="f3">
+        <div class="seg" role="group" aria-label="Dispositivo">
+          <button type="button" data-w="390" data-h="844" aria-pressed="true">Móvil</button>
+          <button type="button" data-w="820" data-h="1180" aria-pressed="false">Tablet V</button>
+          <button type="button" data-w="1180" data-h="820" aria-pressed="false">Tablet H</button>
+          <button type="button" data-w="1440" data-h="900" aria-pressed="false">Escritorio</button>
+        </div>
+        <a class="open" href="3-comando.html" target="_blank">Pantalla completa</a>
+      </div>
+    </div>
+    <div class="stage"><div class="device" id="f3"><iframe title="Propuesta 3 Comando" src="3-comando.html" loading="lazy"></iframe></div></div>
+    <div class="size-note" data-note="f3"></div>
+  </section>
+
+  <section id="p4">
+    <div class="sec-head">
+      <div>
+        <span class="tag" style="background:#1e3a8a;color:#ffe14d">Propuesta 4</span>
+        <h2>Grieta · battle royale</h2>
+        <p>Inspirada en la estética de los battle royale de temporada (cielo de tormenta, una grieta púrpura, paneles inclinados y botones gruesos), con diseño y textos propios.</p>
+        <ul class="feat"><li>Temporizador de "la tormenta cierra en" que tiembla al final</li><li>Jugadores como tarjetas de rareza y barra de nivel tipo pase de batalla que sube al acertar</li><li>Cartel de "¡Victoria!" con corona y feed de respuestas tipo partida</li></ul>
+      </div>
+      <div class="controls" data-for="f4">
+        <div class="seg" role="group" aria-label="Dispositivo">
+          <button type="button" data-w="390" data-h="844" aria-pressed="true">Móvil</button>
+          <button type="button" data-w="820" data-h="1180" aria-pressed="false">Tablet V</button>
+          <button type="button" data-w="1180" data-h="820" aria-pressed="false">Tablet H</button>
+          <button type="button" data-w="1440" data-h="900" aria-pressed="false">Escritorio</button>
+        </div>
+        <a class="open" href="4-grieta.html" target="_blank">Pantalla completa</a>
+      </div>
+    </div>
+    <div class="stage"><div class="device" id="f4"><iframe title="Propuesta 4 Grieta" src="4-grieta.html" loading="lazy"></iframe></div></div>
+    <div class="size-note" data-note="f4"></div>
+  </section>
+</div>
+
+<script>
+  // Fit each device frame to the available width (and a sensible height cap).
+  const state = {};
+  function fit(id) {
+    const dev = document.getElementById(id);
+    const { w, h } = state[id];
+    const stageW = dev.parentElement.clientWidth - 40;
+    const maxH = Math.max(420, window.innerHeight * 0.82);
+    const s = Math.min(1, stageW / w, maxH / h);
+    dev.style.width = `${Math.round(w * s) + (dev.classList.contains("is-desktop") ? 12 : 16)}px`;
+    dev.style.height = `${Math.round(h * s) + (dev.classList.contains("is-desktop") ? 12 : 16)}px`;
+    const f = dev.querySelector("iframe");
+    f.style.width = `${w}px`;
+    f.style.height = `${h}px`;
+    f.style.transform = `scale(${s})`;
+    document.querySelector(`[data-note="${id}"]`).textContent = `${w} × ${h} px · vista al ${Math.round(s * 100)} %`;
+  }
+  document.querySelectorAll(".controls").forEach((c) => {
+    const id = c.dataset.for;
+    const btns = c.querySelectorAll("[data-w]");
+    const set = (b) => {
+      btns.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      state[id] = { w: Number(b.dataset.w), h: Number(b.dataset.h) };
+      document.getElementById(id).classList.toggle("is-desktop", Number(b.dataset.w) >= 1180);
+      fit(id);
+    };
+    btns.forEach((b) => b.addEventListener("click", () => set(b)));
+    set(btns[0]);
+  });
+  window.addEventListener("resize", () => Object.keys(state).forEach(fit));
+
+  // Static captures of the current game, if present.
+  const shots = [
+    ["actual/lobby-movil.png", "Lobby · móvil"],
+    ["actual/juego-movil.png", "Partida · móvil (dibujando): «Terminar ronda» se sale por la derecha"],
+    ["actual/lobby-escritorio.jpg", "Lobby · escritorio"],
+    ["actual/juego-escritorio.jpg", "Partida · escritorio (dibujando)"],
+  ];
+  const box = document.getElementById("shots");
+  shots.forEach(([src, cap]) => {
+    const img = new Image();
+    img.onload = () => {
+      const fig = document.createElement("figure");
+      img.alt = `Captura del juego actual: ${cap}`;
+      const fc = document.createElement("figcaption");
+      fc.textContent = cap;
+      fig.append(img, fc);
+      box.appendChild(fig);
+    };
+    img.src = src;
+  });
+</script>
+</body>
+</html>

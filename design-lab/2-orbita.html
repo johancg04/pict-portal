@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pict-Portal · Propuesta 2 · Órbita</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  @property --h { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+  :root {
+    --bg: #050816;
+    --glass: rgba(255, 255, 255, 0.07);
+    --glass-2: rgba(255, 255, 255, 0.12);
+    --edge: rgba(255, 255, 255, 0.16);
+    --violet: #a78bfa;
+    --teal: #5eead4;
+    --pink: #f9a8d4;
+    --sun: #fcd34d;
+    --text: #eef1ff;
+    --muted: #b4bad6;
+    --display: "Sora", system-ui, sans-serif;
+    --body: "Inter", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--body); }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* ---------- space backdrop ---------- */
+  .space { position: fixed; inset: 0; z-index: -1; overflow: hidden; background: radial-gradient(ellipse at 50% 0%, #11163a 0%, var(--bg) 60%); }
+  .stars { position: absolute; inset: -50%; background-repeat: repeat; animation: drift linear infinite; }
+  .stars--1 { background-image: radial-gradient(1px 1px at 20px 30px, #fff, transparent), radial-gradient(1px 1px at 120px 80px, #c7d2fe, transparent), radial-gradient(1px 1px at 200px 160px, #fff, transparent);
+    background-size: 240px 200px; opacity: 0.6; animation-duration: 160s; }
+  .stars--2 { background-image: radial-gradient(1.5px 1.5px at 60px 90px, #fff, transparent), radial-gradient(1.5px 1.5px at 260px 30px, #a5f3fc, transparent);
+    background-size: 340px 300px; opacity: 0.8; animation-duration: 90s; }
+  .stars--3 { background-image: radial-gradient(2px 2px at 100px 200px, #fff, transparent); background-size: 520px 460px; animation-duration: 55s; animation-name: drift, twinkle; animation-duration: 55s, 3s; animation-iteration-count: infinite; animation-direction: normal, alternate; }
+  @keyframes drift { to { transform: translate(-25%, -12%); } }
+  @keyframes twinkle { to { opacity: 0.4; } }
+  .aurora { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.5; animation: float 18s ease-in-out infinite alternate; }
+  .aurora { transition: background 1.2s ease; }
+  .aurora--a { width: 55vmax; height: 40vmax; left: -15vmax; top: -10vmax; background: var(--aurora-a, #6d28d9); }
+  .aurora--b { width: 45vmax; height: 35vmax; right: -12vmax; top: 20vh; background: var(--aurora-b, #0f766e); animation-delay: -6s; }
+  .aurora--c { width: 40vmax; height: 30vmax; left: 25vw; bottom: -18vmax; background: var(--aurora-c, #be185d); opacity: 0.35; animation-delay: -12s; }
+  @keyframes float { to { transform: translate(6vmax, 4vmax) scale(1.15); } }
+
+  /* ---------- layout ---------- */
+  .app { min-height: 100dvh; display: grid; gap: 14px;
+    padding: max(14px, env(safe-area-inset-top)) 14px calc(170px + env(safe-area-inset-bottom));
+    grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "word" "stage" "panel"; align-content: start; }
+  .top { grid-area: top; } .word { grid-area: word; } .stage { grid-area: stage; }
+  .sidetabs { grid-area: tabs; display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 22px; }
+  .sidetabs button { height: 40px; border: 0; border-radius: 18px; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; transition: background 0.3s, color 0.3s; }
+  .sidetabs button[aria-selected="true"] { background: linear-gradient(135deg, var(--teal), var(--violet)); color: #0b1026; }
+  .players, .score, .chat { grid-area: panel; }
+  body:not([data-tab="players"]) .players, body:not([data-tab="score"]) .score, body:not([data-tab="chat"]) .chat { display: none; }
+  .answer { position: fixed; left: 14px; right: 14px; bottom: calc(92px + env(safe-area-inset-bottom)); z-index: 30; }
+  .dock { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 30; }
+
+  /* B · tablet vertical */
+  @media (orientation: portrait) and (min-width: 700px) {
+    .app { padding: 22px; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas: "top top" "word word" "stage stage" "answer answer" "players chat" "score chat"; }
+    .players { grid-area: players; } .score { grid-area: score; } .chat { grid-area: chat; }
+    body[data-tab] .players, body[data-tab] .score, body[data-tab] .chat { display: flex; }
+    .answer { position: static; grid-area: answer; }
+    body .dock { display: none; }
+    .chat .chat-list { max-height: 360px; }
+  }
+  /* C · horizontal compacto */
+  @media (orientation: landscape) and (min-width: 560px) {
+    .app { height: 100dvh; overflow: hidden; padding: 14px 18px; gap: 14px; grid-template-columns: minmax(0, 1fr) clamp(270px, 30vw, 350px);
+      grid-template-rows: auto auto minmax(0, 1fr) auto; grid-template-areas: "top top" "word tabs" "stage panel" "stage answer"; }
+    .sidetabs { display: grid; }
+    body[data-tab="players"] .players, body[data-tab="score"] .score, body[data-tab="chat"] .chat { display: flex; }
+    .panel { overflow: auto; }
+    .answer { position: static; grid-area: answer; }
+    body .dock { display: none; }
+    .chat .chat-list { max-height: none; }
+    .stage { container-type: size; min-height: 0; }
+    .stage .board { width: min(100cqw, calc((100cqh - var(--bar-h)) * 1.5)); }
+  }
+  /* D · escritorio */
+  @media (orientation: landscape) and (min-width: 1280px) {
+    .app { padding: 22px; gap: 18px; grid-template-columns: 280px minmax(0, 1fr) 360px; grid-template-rows: auto auto minmax(0, 1fr) auto;
+      grid-template-areas: "top top top" "players word chat" "players stage chat" "score stage answer"; }
+    .players { grid-area: players; } .score { grid-area: score; } .chat { grid-area: chat; }
+    body[data-tab] .players, body[data-tab] .score, body[data-tab] .chat { display: flex; }
+    .sidetabs { display: none; }
+    .answer { align-self: end; }
+  }
+
+  /* ---------- glass ---------- */
+  .glass { background: linear-gradient(160deg, var(--glass-2), var(--glass)); border: 1px solid var(--edge); border-radius: 24px;
+    backdrop-filter: blur(22px) saturate(140%); -webkit-backdrop-filter: blur(22px) saturate(140%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 20px 50px rgba(0, 0, 0, 0.35); }
+  .panel { padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+  .panel h2 { margin: 0; font-family: var(--display); font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
+  .panel h2 small { font-family: var(--body); font-size: 12px; font-weight: 500; color: var(--muted); }
+
+  /* ---------- top ---------- */
+  .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .icon-btn { width: 46px; height: 46px; border-radius: 23px; display: grid; place-items: center; padding: 0; flex: 0 0 auto; color: var(--text); transition: transform 0.2s; }
+  .icon-btn:hover { transform: translateY(-2px); }
+  .icon-btn svg { width: 20px; height: 20px; }
+  .brand { margin: 0; display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 800; font-size: clamp(17px, 4.6vw, 24px); letter-spacing: -0.01em; }
+  .logo { width: 30px; height: 30px; position: relative; flex: 0 0 auto; }
+  .logo::before { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff, var(--violet) 60%, #4c1d95); box-shadow: 0 0 14px var(--violet); }
+  .logo::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid rgba(94, 234, 212, 0.8); transform: rotateX(70deg) rotate(0deg); animation: orbit-ring 6s linear infinite; }
+  @keyframes orbit-ring { to { transform: rotateX(70deg) rotate(360deg); } }
+  .grad { background: linear-gradient(90deg, var(--teal), var(--violet), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .meta { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .chip { height: 36px; padding: 0 14px; border-radius: 18px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .chip strong { color: var(--text); font-weight: 700; letter-spacing: 0.06em; }
+  .hide-sm { display: none; }
+  @media (min-width: 560px) { .hide-sm { display: inline-flex; } }
+
+  .timer { position: relative; width: 60px; height: 60px; flex: 0 0 auto; }
+  .timer svg { width: 100%; height: 100%; transform: rotate(-90deg); overflow: visible; }
+  .timer circle { fill: none; stroke-width: 4; }
+  .timer__track { stroke: rgba(255, 255, 255, 0.12); }
+  .timer__bar { stroke: url(#tg); stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - var(--progress, 1) * 100); transition: stroke-dashoffset 1s linear; }
+  .timer__moon { position: absolute; inset: 0; transform: rotate(calc(var(--progress, 1) * 360deg)); transition: transform 1s linear; }
+  .timer__moon::before { content: ""; position: absolute; top: 1px; left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: #fff; box-shadow: 0 0 10px #fff, 0 0 20px var(--teal); }
+  .timer b { position: absolute; inset: 0; display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 18px; }
+  .is-urgent .timer__moon::before { background: var(--pink); box-shadow: 0 0 12px var(--pink), 0 0 24px var(--pink); }
+  .is-urgent .timer b { color: var(--pink); animation: beat 1s ease-in-out infinite; }
+  @keyframes beat { 50% { transform: scale(1.15); } }
+
+  .role { position: relative; display: inline-grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 22px; }
+  .role::before { content: ""; position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); border-radius: 18px;
+    background: linear-gradient(135deg, var(--teal), var(--violet)); box-shadow: 0 6px 18px rgba(167, 139, 250, 0.45); transition: transform 0.35s cubic-bezier(.2, .9, .3, 1.2); }
+  [data-role="draw"] .role::before { transform: translateX(100%); }
+  .role button { position: relative; height: 36px; padding: 0 14px; border: 0; background: transparent; font-size: 13px; font-weight: 600; color: var(--muted); transition: color 0.3s; }
+  .role button[aria-pressed="true"] { color: #0b1026; }
+
+  /* ---------- word ---------- */
+  .word { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 16px; }
+  .word__label { width: 100%; font-size: 13px; color: var(--muted); }
+  @media (min-width: 700px) { .word__label { width: auto; } }
+  .tiles { display: flex; gap: clamp(4px, 1.2vw, 8px); flex: 1; }
+  .tile { position: relative; overflow: hidden; width: clamp(30px, 9vw, 46px); aspect-ratio: 4 / 5; border-radius: 14px; display: grid; place-items: center;
+    font-family: var(--display); font-weight: 800; font-size: clamp(15px, 4vw, 22px);
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.04)); border: 1px solid var(--edge);
+    animation: rise 0.5s cubic-bezier(.2, .9, .3, 1.3) both; animation-delay: calc(var(--i) * 50ms); }
+  .tile::after { content: ""; position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+    transform: translateX(-120%); animation: shimmer 3.2s ease-in-out infinite; animation-delay: calc(var(--i) * 90ms); }
+  .tile.is-shown { color: #0b1026; background: linear-gradient(160deg, #fff, #c4b5fd); }
+  .tile.is-hint { background: linear-gradient(160deg, #fff, var(--teal)); }
+  .is-solved .tile { background: linear-gradient(160deg, #fff, var(--sun)); animation: hop 0.7s both; animation-delay: calc(var(--i) * 60ms); }
+  @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.7); } }
+  @keyframes shimmer { 0%, 60% { transform: translateX(-120%); } 100% { transform: translateX(120%); } }
+  @keyframes hop { 40% { transform: translateY(-12px) scale(1.08); } }
+  .pill-btn { height: 46px; padding: 0 18px; border-radius: 23px; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: transform 0.2s, box-shadow 0.2s; }
+  .pill-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 24px rgba(94, 234, 212, 0.25); }
+  .pill-btn svg { width: 18px; height: 18px; }
+
+  /* ---------- stage ---------- */
+  [data-role="draw"] .stage { --bar-h: 128px; }
+  .stage { --bar-h: 70px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .board { position: relative; width: 100%; padding: 3px; border-radius: 28px;
+    background: linear-gradient(var(--h), #5eead4, #a78bfa, #f9a8d4, #fcd34d, #5eead4); animation: holo 8s linear infinite, bob 6s ease-in-out infinite;
+    box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45), 0 0 50px rgba(167, 139, 250, 0.3); }
+  @keyframes holo { to { --h: 360deg; } }
+  @keyframes bob { 50% { transform: translateY(-4px); } }
+  .board canvas { display: block; width: 100%; aspect-ratio: 3 / 2; border-radius: 25px; background: #f7f8ff; touch-action: none; }
+  [data-role="draw"] .board canvas { cursor: crosshair; }
+  .board::after { content: ""; position: absolute; inset: 3px; border-radius: 25px; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+    background: radial-gradient(circle at var(--x, 50%) 50%, rgba(167, 139, 250, 0.35), transparent 40%); }
+  .is-ai-thinking .board::after { opacity: 1; animation: sweep 1.4s ease-in-out infinite alternate; }
+  @property --x { syntax: "<percentage>"; inherits: false; initial-value: 10%; }
+  @keyframes sweep { from { --x: 10%; } to { --x: 90%; } }
+  .ai-think { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 16px; font-size: 12px; font-weight: 600; color: #0b1026;
+    background: rgba(255, 255, 255, 0.85); opacity: 0; transition: opacity 0.3s; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .ai-think i { width: 10px; height: 10px; border-radius: 50%; background: conic-gradient(var(--violet), var(--teal), var(--violet)); animation: spinz 0.9s linear infinite; }
+  @keyframes spinz { to { transform: rotate(360deg); } }
+  .is-ai-thinking .ai-think { opacity: 1; }
+
+  .bar { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 8px; border-radius: 30px; max-width: 100%; }
+  .tool { width: 44px; height: 44px; border-radius: 22px; border: 0; background: transparent; display: grid; place-items: center; padding: 0; transition: background 0.2s, transform 0.15s; }
+  .tool:hover { background: rgba(255, 255, 255, 0.1); }
+  .tool:active { transform: scale(0.9); }
+  .tool svg { width: 20px; height: 20px; }
+  .tool[aria-pressed="true"] { background: linear-gradient(135deg, var(--teal), var(--violet)); color: #0b1026; }
+  .swatch { width: 32px; height: 32px; border-radius: 50%; padding: 0; border: 2px solid rgba(255, 255, 255, 0.35); background: var(--c); transition: transform 0.2s; }
+  .swatch[aria-pressed="true"] { transform: scale(1.18); border-color: #fff; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.25); }
+  .size { width: 40px; height: 44px; border: 0; border-radius: 20px; background: transparent; display: grid; place-items: center; padding: 0; }
+  .size i { display: block; width: var(--s); height: var(--s); border-radius: 50%; background: var(--text); }
+  .size[aria-pressed="true"] { background: rgba(255, 255, 255, 0.14); }
+  .sep { width: 1px; height: 26px; background: var(--edge); }
+  .react { color: var(--c); }
+  [data-role="guess"] [data-when="draw"], [data-role="draw"] [data-when="guess"] { display: none !important; }
+
+  /* ---------- players ---------- */
+  .row { display: flex; align-items: center; gap: 12px; min-height: 50px; }
+  .avatar { position: relative; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff; background: var(--c); flex: 0 0 auto; }
+  .avatar.is-drawing::after { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 2px dashed var(--teal); animation: spinz 6s linear infinite; }
+  .avatar--ai { background: conic-gradient(from 0deg, #5eead4, #a78bfa, #f9a8d4, #5eead4); animation: spinz 5s linear infinite; }
+  .avatar--ai svg { width: 20px; height: 20px; animation: spinz 5s linear infinite reverse; }
+  .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .who b { font-weight: 600; }
+  .who small { font-size: 12px; color: var(--muted); }
+  .pts { font-family: var(--display); font-weight: 800; font-size: 18px; }
+  .is-bump { display: inline-block; animation: bump 0.7s; }
+  @keyframes bump { 40% { transform: scale(1.6); color: var(--sun); } }
+  .podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; padding-top: 8px; }
+  .podium div { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 13px; }
+  .podium span.step { width: 100%; border-radius: 14px 14px 6px 6px; display: grid; place-items: center; font-family: var(--display); font-weight: 800; color: #0b1026; }
+  .rk { font-size: 14px; }
+  .rk__pos { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-family: var(--display); font-weight: 800; font-size: 12px; background: rgba(255, 255, 255, 0.12); }
+  .rk[data-pos="1"] .rk__pos { background: linear-gradient(160deg, #fff, #fcd34d); color: #0b1026; box-shadow: 0 0 16px rgba(252, 211, 77, 0.6); }
+  .rk[data-pos="2"] .rk__pos { background: linear-gradient(160deg, #fff, #cbd5e1); color: #0b1026; }
+  .rk[data-pos="3"] .rk__pos { background: linear-gradient(160deg, #fff, #fdba74); color: #0b1026; }
+  .rk__pts { font-family: var(--display); font-weight: 800; font-size: 17px; }
+  .rk__bar { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); }
+  .rk__bar i { border-radius: 4px; background: linear-gradient(90deg, var(--teal), var(--violet), var(--pink)); }
+  .rk__plus { color: var(--sun); }
+  .ai-bars { display: grid; gap: 8px; }
+  .ai-bar { display: grid; grid-template-columns: 90px 1fr 40px; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .ai-bar__track { height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.1); overflow: hidden; }
+  .ai-bar__track i { display: block; height: 100%; width: var(--w); border-radius: 4px; background: linear-gradient(90deg, var(--teal), var(--violet)); animation: grow 0.9s cubic-bezier(.2, .9, .3, 1); }
+  @keyframes grow { from { width: 0; } }
+  .ai-bar__pct { color: var(--text); text-align: right; font-weight: 600; }
+
+  /* ---------- chat ---------- */
+  .chat { min-height: 280px; }
+  .chat-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; min-height: 0; max-height: 40dvh; }
+  .msg { align-self: flex-start; max-width: 88%; padding: 9px 13px; border-radius: 18px 18px 18px 6px; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--edge);
+    font-size: 14px; display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; animation: pop 0.35s cubic-bezier(.2, .9, .3, 1.3); }
+  @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(0.95); } }
+  .msg__who { font-weight: 700; font-size: 13px; }
+  .msg__time { display: none; }
+  .msg--ai .msg__who { color: var(--teal); }
+  .msg--peer .msg__who { color: var(--pink); }
+  .msg--me { align-self: flex-end; border-radius: 18px 18px 6px 18px; background: linear-gradient(135deg, var(--teal), var(--violet)); color: #0b1026; border: 0; }
+  .msg--me .msg__who { display: none; }
+  .msg--system { align-self: center; background: none; border: 0; font-size: 12px; color: var(--muted); }
+  .msg--success { align-self: stretch; max-width: none; background: linear-gradient(135deg, rgba(252, 211, 77, 0.25), rgba(249, 168, 212, 0.2)); border-color: rgba(252, 211, 77, 0.6); }
+  .msg--success .msg__who { color: var(--sun); }
+  .typing { min-height: 20px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .typing.is-on::before { content: ""; width: 26px; height: 8px; background: radial-gradient(circle, var(--teal) 3px, transparent 4px) 0 0 / 9px 8px repeat-x; animation: dots 1s steps(3) infinite; }
+  @keyframes dots { from { width: 8px; } to { width: 27px; } }
+
+  /* ---------- answer ---------- */
+  .answer form { display: flex; gap: 8px; padding: 6px; border-radius: 30px; }
+  .answer input { flex: 1; min-width: 0; height: 48px; padding: 0 16px; border: 0; border-radius: 24px; background: transparent; font-size: 16px; }
+  .answer input::placeholder { color: var(--muted); }
+  .answer input:focus { outline: none; }
+  .answer form:focus-within { box-shadow: 0 0 0 2px var(--teal), 0 20px 50px rgba(0, 0, 0, 0.35); }
+  .send { width: 48px; height: 48px; border-radius: 24px; border: 0; background: linear-gradient(135deg, var(--teal), var(--violet)); color: #0b1026; display: grid; place-items: center; padding: 0; flex: 0 0 auto; transition: transform 0.2s; }
+  .send:hover { transform: rotate(-12deg) scale(1.05); }
+  .send svg { width: 20px; height: 20px; }
+  .drawing-note { height: 60px; border-radius: 30px; display: grid; place-items: center; font-size: 14px; color: var(--muted); }
+
+  /* ---------- dock ---------- */
+  .dock { display: grid; grid-template-columns: repeat(3, 76px); padding: 6px; border-radius: 34px; }
+  .dock button { position: relative; height: 58px; border: 0; border-radius: 28px; background: transparent; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    font-size: 11px; font-weight: 600; color: var(--muted); transition: background 0.3s, color 0.3s; }
+  .dock svg { width: 22px; height: 22px; }
+  .dock button[aria-selected="true"] { background: rgba(255, 255, 255, 0.16); color: var(--text); }
+  .badge { position: absolute; top: 4px; right: 12px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--pink); color: #0b1026; font-size: 11px; font-weight: 800; display: grid; place-items: center; animation: beat 1.2s ease-in-out infinite; }
+
+  .toast { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 70; padding: 12px 20px; border-radius: 24px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body data-role="guess" data-tab="chat">
+<div class="space" aria-hidden="true" data-ambient>
+  <div class="aurora aurora--a"></div><div class="aurora aurora--b"></div><div class="aurora aurora--c"></div>
+  <div class="stars stars--1"></div><div class="stars stars--2"></div><div class="stars stars--3"></div>
+</div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><linearGradient id="tg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5eead4"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs></svg>
+
+<div class="app">
+  <header class="top">
+    <a class="icon-btn glass" href="index.html" aria-label="Volver al laboratorio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <h1 class="brand"><span class="logo" aria-hidden="true" data-ambient></span><span>Pict<span class="grad">Portal</span></span></h1>
+    <div class="meta">
+      <span class="chip glass hide-sm">Sala <strong>RMFUQ</strong></span>
+      <span class="chip glass">Ronda <strong data-round>2/5</strong></span>
+      <div class="timer" role="timer" aria-label="Segundos restantes">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><circle class="timer__track" cx="32" cy="32" r="27" pathLength="100"/><circle class="timer__bar" cx="32" cy="32" r="27" pathLength="100"/></svg>
+        <span class="timer__moon" aria-hidden="true"></span>
+        <b data-timer>90</b>
+      </div>
+    </div>
+    <div class="role glass" role="group" aria-label="Probar como">
+      <button type="button" data-role-btn="guess" aria-pressed="true">Adivinar</button>
+      <button type="button" data-role-btn="draw" aria-pressed="false">Dibujar</button>
+    </div>
+  </header>
+
+  <section class="word glass" aria-live="polite">
+    <span class="word__label" data-word-label>Luis está dibujando</span>
+    <div class="tiles" data-word></div>
+    <button type="button" class="pill-btn glass" data-action="hint" data-when="guess"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>Pista</button>
+    <button type="button" class="pill-btn glass" data-action="skip" data-when="draw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l9 7-9 7V5zM18 5v14"/></svg>Otra palabra</button>
+  </section>
+
+  <div class="sidetabs glass" role="tablist" aria-label="Paneles">
+    <button type="button" role="tab" data-tab-btn="chat" aria-selected="true">Chat</button>
+    <button type="button" role="tab" data-tab-btn="players" aria-selected="false">Sala</button>
+    <button type="button" role="tab" data-tab-btn="score" aria-selected="false">Podio</button>
+  </div>
+
+  <main class="stage">
+    <div class="board" data-ambient-self>
+      <canvas data-board data-bg="#f7f8ff" data-ink="#1e1b4b" aria-label="Lienzo de dibujo"></canvas>
+      <span class="ai-think" aria-hidden="true"><i></i>La IA está mirando tu dibujo</span>
+    </div>
+
+    <div class="bar glass" data-when="draw" aria-label="Herramientas">
+      <button type="button" class="tool" data-tool="pen" aria-pressed="true" aria-label="Lápiz"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16l-1 4z"/></svg></button>
+      <button type="button" class="tool" data-tool="eraser" aria-pressed="false" aria-label="Borrador"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 20h12M5 14l8-8 6 6-8 8H8l-3-3z"/></svg></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="swatch" style="--c:#1e1b4b" data-color="#1e1b4b" aria-pressed="true" aria-label="Índigo oscuro"></button>
+      <button type="button" class="swatch" style="--c:#7c3aed" data-color="#7c3aed" aria-pressed="false" aria-label="Violeta"></button>
+      <button type="button" class="swatch" style="--c:#0d9488" data-color="#0d9488" aria-pressed="false" aria-label="Turquesa"></button>
+      <button type="button" class="swatch" style="--c:#db2777" data-color="#db2777" aria-pressed="false" aria-label="Rosa"></button>
+      <button type="button" class="swatch" style="--c:#f59e0b" data-color="#f59e0b" aria-pressed="false" aria-label="Ámbar"></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="size" style="--s:6px" data-size="4" aria-pressed="false" aria-label="Trazo fino"><i></i></button>
+      <button type="button" class="size" style="--s:11px" data-size="8" aria-pressed="true" aria-label="Trazo medio"><i></i></button>
+      <button type="button" class="size" style="--s:17px" data-size="16" aria-pressed="false" aria-label="Trazo grueso"><i></i></button>
+      <span class="sep" aria-hidden="true"></span>
+      <button type="button" class="tool" data-action="undo" aria-label="Deshacer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+      <button type="button" class="tool" data-action="clear" aria-label="Limpiar lienzo" style="color:var(--pink)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+    </div>
+
+    <div class="bar glass" data-when="guess" aria-label="Reacciones">
+      <button type="button" class="tool react" style="--c:#fdba74" data-react aria-label="Reaccionar con fuego"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21a6 6 0 0 0 6-6c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-1-2-3-2 2-3 4-3 7a6 6 0 0 0 6 6z"/></svg></button>
+      <button type="button" class="tool react" style="--c:#f9a8d4" data-react aria-label="Reaccionar con corazón"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/></svg></button>
+      <button type="button" class="tool react" style="--c:#fcd34d" data-react aria-label="Reaccionar con risa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14a4 4 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg></button>
+      <button type="button" class="tool react" style="--c:#5eead4" data-react aria-label="Reaccionar con estrella"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3z"/></svg></button>
+    </div>
+  </main>
+
+  <section class="panel glass players" aria-label="Jugadores">
+    <h2>Tripulación <small>4 en la sala</small></h2>
+    <div class="row"><span class="avatar is-drawing" style="--c:#0369a1">LU</span><span class="who"><b>Luis <span data-when="draw">(tú)</span></b><small>Dibujando</small></span><span class="pts" data-score="luis">85</span></div>
+    <div class="row"><span class="avatar" style="--c:#7c3aed">AN</span><span class="who"><b>Ana <span data-when="guess">(tú)</span></b><small>Anfitriona</small></span><span class="pts" data-score="ana">0</span></div>
+    <div class="row"><span class="avatar" style="--c:#be185d">MA</span><span class="who"><b>Marta</b><small>Adivinando</small></span><span class="pts" data-score="marta">40</span></div>
+    <div class="row"><span class="avatar avatar--ai"><svg viewBox="0 0 24 24" fill="none" stroke="#0b1026" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01"/></svg></span><span class="who"><b>IA</b><small>Cree que es: <span data-ai-last>…</span></small></span><span class="pts" data-score="ia">0</span></div>
+  </section>
+
+  <section class="panel glass score" aria-label="Marcador">
+    <h2>Ranking en vivo <small>se reordena solo</small></h2>
+    <div class="rank" data-rank aria-live="polite"></div>
+    <h2>Lo que ve la IA</h2>
+    <div class="ai-bars" data-ai-bars><div class="ai-bar" style="--w:0%"><span class="ai-bar__label">analizando…</span><span class="ai-bar__track"><i></i></span><b class="ai-bar__pct">–</b></div></div>
+  </section>
+
+  <section class="panel glass chat" aria-label="Respuestas">
+    <h2>Respuestas</h2>
+    <ul class="chat-list" data-chat-list aria-live="polite"></ul>
+    <div class="typing" data-typing></div>
+  </section>
+
+  <div class="answer">
+    <form class="glass" data-chat-form data-when="guess">
+      <label for="g2" class="sr-only">Tu respuesta</label>
+      <input id="g2" type="text" autocomplete="off" placeholder="¿Qué está dibujando?" enterkeyhint="send">
+      <button class="send" type="submit" aria-label="Enviar respuesta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2.5-6.5L4 12z"/></svg></button>
+    </form>
+    <div class="drawing-note glass" data-when="draw">Estás dibujando · las respuestas llegan al chat</div>
+  </div>
+
+  <nav class="dock glass" role="tablist" aria-label="Paneles">
+    <button type="button" role="tab" data-tab-btn="chat" aria-selected="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4V5z"/></svg>Chat<span class="badge" data-unread hidden>0</span></button>
+    <button type="button" role="tab" data-tab-btn="players" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>Sala</button>
+    <button type="button" role="tab" data-tab-btn="score" aria-selected="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 4h8v5a4 4 0 0 1-8 0V4z"/><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8 21h8M10 17h4"/></svg>Podio</button>
+  </nav>
+</div>
+
+<div class="toast glass" data-toast role="status"></div>
+<div data-fx data-fx-colors="#5eead4,#a78bfa,#f9a8d4,#fcd34d,#ffffff"></div>
+<script type="application/json" id="lab-config">
+{
+  "style": "orbita",
+  "primaryVar": "--teal",
+  "themes": [
+    { "id": "aurora", "name": "Aurora", "swatch": ["#5eead4", "#a78bfa", "#f9a8d4"], "fx": "#5eead4,#a78bfa,#f9a8d4,#fcd34d,#ffffff",
+      "vars": { "--teal": "#5eead4", "--violet": "#a78bfa", "--pink": "#f9a8d4", "--aurora-a": "#6d28d9", "--aurora-b": "#0f766e", "--aurora-c": "#be185d" } },
+    { "id": "nebulosa", "name": "Nebulosa", "swatch": ["#f0abfc", "#fb7185", "#fdba74"], "fx": "#f0abfc,#fb7185,#fdba74,#ffffff",
+      "vars": { "--teal": "#f0abfc", "--violet": "#fb7185", "--pink": "#fdba74", "--aurora-a": "#9d174d", "--aurora-b": "#7e22ce", "--aurora-c": "#c2410c" } },
+    { "id": "hielo", "name": "Hielo", "swatch": ["#7dd3fc", "#93c5fd", "#e0f2fe"], "fx": "#7dd3fc,#93c5fd,#e0f2fe,#ffffff",
+      "vars": { "--teal": "#7dd3fc", "--violet": "#93c5fd", "--pink": "#e0f2fe", "--aurora-a": "#1e3a8a", "--aurora-b": "#0e7490", "--aurora-c": "#334155" } },
+    { "id": "solar", "name": "Solar", "swatch": ["#fcd34d", "#fb923c", "#fda4af"], "fx": "#fcd34d,#fb923c,#fda4af,#ffffff",
+      "vars": { "--teal": "#fcd34d", "--violet": "#fb923c", "--pink": "#fda4af", "--aurora-a": "#b45309", "--aurora-b": "#be123c", "--aurora-c": "#7c2d12" } }
+  ]
+}
+</script>
+<script src="lab.js"></script>
+</body>
+</html>

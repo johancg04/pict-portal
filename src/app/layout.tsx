@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "./globals.css";
+import "./skins.css";
+import { SKIN_INIT_SCRIPT } from "@/lib/skins";
 
 const siteUrl = "https://pict-portal.vercel.app";
 
@@ -69,6 +71,15 @@ export default function RootLayout({
         <Script id="theme-init" strategy="beforeInteractive">
           {`(function(){try{var s=localStorage.getItem("theme");var t=(s==="light"||s==="dark")?s:(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`}
         </Script>
+        <Script id="skin-init" strategy="beforeInteractive">
+          {SKIN_INIT_SCRIPT}
+        </Script>
+        {/* Decorative, skin-specific animated backdrop (see skins.css). */}
+        <div className="pp-backdrop" aria-hidden="true">
+          <span className="pp-backdrop__a" />
+          <span className="pp-backdrop__b" />
+          <span className="pp-backdrop__c" />
+        </div>
         {children}
       </body>
     </html>

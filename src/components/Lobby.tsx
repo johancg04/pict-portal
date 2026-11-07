@@ -4,17 +4,11 @@ import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import PlayerBadge from "./PlayerBadge";
 import ThemeToggle from "./ThemeToggle";
+import SkinPicker from "./SkinPicker";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/room";
-import { portal } from "@/lib/portal";
+import { prewarmRoom } from "@/lib/realtime";
 import { parseCustomWords } from "@/lib/words";
-import {
-  AiDifficulty,
-  chatChannel,
-  cursorChannel,
-  drawChannel,
-  gameChannel,
-  reactionsChannel,
-} from "@/lib/types";
+import { AiDifficulty } from "@/lib/types";
 
 const ROUND_OPTIONS = [3, 5, 10];
 const DIFFICULTY_OPTIONS: { value: AiDifficulty; label: string }[] = [
@@ -54,29 +48,16 @@ export default function Lobby({
   const canSubmit = trimmed.length > 0 && (mode === "create" || trimmedCode.length > 0);
 
   // Opens the room's channels ahead of time, while the user is still filling in
-  // the form. Connecting to Portal — minting an anonymous identity plus a
-  // subscribe handshake per channel — reliably takes a couple of seconds
-  // (verified against the live backend); starting it here hides that wait behind
-  // normal typing time. `portal.channel(id)` is a registry lookup that hands
-  // back this exact same handle to Game's own useChannel on submit, already
-  // connecting (or connected) rather than starting from zero. Gated to a
-  // full-length code in "join" mode so we're not opening a fresh connection on
-  // every keystroke.
+  // the form. Joining the Supabase channels takes a moment; starting it here
+  // hides that wait behind normal typing time. prewarmRoom acquires the shared
+  // room registry in src/lib/realtime.ts, so Game's own useChannel on submit
+  // gets these same, already-connecting channels. Gated to a full-length code
+  // in "join" mode so we're not opening a fresh connection on every keystroke.
   const pendingRoomCode =
     mode === "create" ? createdCode : trimmedCode.length === 5 ? trimmedCode : undefined;
   useEffect(() => {
     if (!pendingRoomCode) return;
-    const channels = [
-      portal.channel(gameChannel(pendingRoomCode)),
-      portal.channel(chatChannel(pendingRoomCode)),
-      portal.channel(drawChannel(pendingRoomCode), { history: "none" }),
-      portal.channel(cursorChannel(pendingRoomCode), { history: "none" }),
-      portal.channel(reactionsChannel(pendingRoomCode), { history: "none" }),
-    ];
-    for (const c of channels) c.acquire();
-    return () => {
-      for (const c of channels) c.release();
-    };
+    return prewarmRoom(pendingRoomCode);
   }, [pendingRoomCode]);
 
   async function generateWordsWithIA() {
@@ -140,7 +121,7 @@ export default function Lobby({
   return (
     <div className="relative grid min-h-screen place-items-center overflow-hidden p-6">
       {/* Decorative background — purely visual, never intercepts clicks */}
-      <div className="pointer-events-none absolute inset-0">
+      <div className="pp-lobby-decor pointer-events-none absolute inset-0">
         <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-[#22D3C5]/20 blur-3xl" />
         <div className="absolute -bottom-40 -right-24 h-96 w-96 rounded-full bg-[#7C3AED]/20 blur-3xl" />
         <div
@@ -161,9 +142,9 @@ export default function Lobby({
           width={120}
           height={120}
           priority
-          className="h-28 w-28 drop-shadow-[0_8px_24px_rgba(124,58,237,0.35)]"
+          className="pp-logo h-28 w-28 drop-shadow-[0_8px_24px_rgba(124,58,237,0.35)]"
         />
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight">
+        <h1 className="pp-brand mt-2 text-3xl font-extrabold tracking-tight">
           Pict<span className="text-accent">-Portal</span>
         </h1>
         <p className="mt-2 text-center text-sm text-fg/50">
@@ -171,12 +152,15 @@ export default function Lobby({
         </p>
 
         {/* Card */}
-        <div className="mt-6 w-full rounded-2xl border border-edge bg-panel p-6 shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg/60">
+        <div className="pp-panel pp-lobby mt-6 w-full rounded-2xl border border-edge bg-panel p-6 shadow-xl">
+          <div className="flex items-center justify-between gap-2">
+            <span className="pp-chip inline-flex items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg/60">
               <span className="text-accent">✦</span> IA en la partida
             </span>
-            <ThemeToggle />
+            <div className="flex items-center gap-2">
+              <SkinPicker label />
+              <ThemeToggle />
+            </div>
           </div>
 
           {/* Create / Join tabs */}
@@ -215,7 +199,8 @@ export default function Lobby({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ada"
-                  className="w-full bg-transparent outline-none placeholder:text-fg/30"
+                  aria-label="Tu nombre"
+                  className="w-full bg-transparent py-1.5 outline-none placeholder:text-fg/30"
                 />
               </div>
             </div>
@@ -321,7 +306,7 @@ export default function Lobby({
             <button
               type="submit"
               disabled={!canSubmit}
-              className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent to-purple-500 px-4 py-2.5 font-semibold text-white shadow-lg shadow-accent/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+              className="pp-btn-primary mt-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-accent to-purple-500 px-4 py-2.5 font-semibold text-white shadow-lg shadow-accent/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
             >
               {mode === "create" ? "Crear y entrar" : "Entrar a la sala"} <span aria-hidden>→</span>
             </button>

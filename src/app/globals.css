@@ -10,6 +10,9 @@
   --color-edge: 226 228 233;
   --color-fg: 21 23 28;
   --color-accent: 99 102 241;
+  /* Drawing surface colors, read by Canvas.tsx (6-digit hex only). Skins override them. */
+  --pp-canvas-bg: #ffffff;
+  --pp-canvas-ink: #1f2328;
   color-scheme: light;
 }
 
@@ -19,6 +22,8 @@
     --color-panel: 23 26 33;
     --color-edge: 38 43 54;
     --color-fg: 230 232 236;
+    --pp-canvas-bg: #0f1115;
+    --pp-canvas-ink: #e6e8ec;
     color-scheme: dark;
   }
 }
@@ -28,6 +33,8 @@
   --color-panel: 23 26 33;
   --color-edge: 38 43 54;
   --color-fg: 230 232 236;
+  --pp-canvas-bg: #0f1115;
+  --pp-canvas-ink: #e6e8ec;
   color-scheme: dark;
 }
 
