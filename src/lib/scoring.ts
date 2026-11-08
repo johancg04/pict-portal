@@ -61,13 +61,15 @@ export function streakBonus(streak: number): number {
 }
 
 /**
- * What the drawer earns when someone guesses: the average of what each guesser
- * got (only the winner scored, so winnerPoints / number of guessers).
- * `participants` includes the drawer and the AI when it plays.
+ * What the drawer earns when someone guesses: the winner's points shared across
+ * everyone at the table, so it is always LESS than what the guesser got. (Dividing
+ * by the number of guessers instead made a 1-vs-AI game end tied every time:
+ * each round paid guesser and drawer the same.) `participants` includes the
+ * drawer and the AI when it plays.
  */
 export function drawerPay(winnerPoints: number, participants: number): number {
   if (participants < 2) return 0;
-  return Math.round(winnerPoints / (participants - 1));
+  return Math.round(winnerPoints / participants);
 }
 
 /** Whole laps: every participant draws the same number of times. */
