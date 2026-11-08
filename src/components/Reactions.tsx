@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChannel } from "@/lib/realtime";
 import { ReactionMsg, reactionsChannel } from "@/lib/types";
+import { playSound } from "@/lib/sound";
 
 // Emojis que cualquiera lanza y flotan en la pantalla de todos.
 //
@@ -19,6 +20,7 @@ export default function Reactions({ roomCode, name }: { roomCode: string; name: 
   const nextId = useRef(0);
 
   const spawn = useCallback((emoji: string, who: string) => {
+    playSound("reaction"); // yours and everyone else's (throttled inside)
     const id = nextId.current++;
     // Dispersión horizontal para que dos reacciones seguidas no se solapen.
     setFloating((prev) => [...prev, { id, emoji, name: who, left: 10 + Math.random() * 70 }]);

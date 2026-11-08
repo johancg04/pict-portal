@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { playCorrect } from "@/lib/sound";
+import { playSound } from "@/lib/sound";
 
 // Confetti + a short chime when someone nails the word. Both are generated at
 // runtime (canvas particles, Web Audio oscillators) so there's no library and
@@ -193,8 +193,9 @@ export default function Celebration({
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (!reduced) burst();
-    if (!muted) playCorrect();
-  }, [trigger, muted, armed, burst]);
+    // Mute, volume and the chosen pack are handled inside playSound.
+    playSound("correct");
+  }, [trigger, armed, burst]);
 
   // Keep the canvas matched to the window if it changes mid-flight.
   useEffect(() => {

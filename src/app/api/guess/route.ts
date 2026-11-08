@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { GUESS, parseDifficulty } from "@/lib/difficulty";
 
 // Server-only route: the AI looks at the current doodle and guesses what it is.
 // The target word is NEVER sent here — the model has to actually recognize the
@@ -20,6 +21,8 @@ type GuessResult = {
   // Server said no before even touching Gemini — the caller should back off
   // instead of treating this as a transient failure worth logging.
   skip?: boolean;
+  // Set when Gemini's quota is hit: how long the caller should wait before retrying.
+  backoffMs?: number;
 };
 
 // Last accepted request per room, so a burst of clients (or a tight local
@@ -61,8 +64,10 @@ export async function POST(req: NextRequest): Promise<NextResponse<GuessResult>>
 
   let dataUrl: string | undefined;
   let roomCode: string | undefined;
+  let difficulty = parseDifficulty(undefined);
   try {
-    const body = (await req.json()) as { image?: string; roomCode?: string };
+    const body = (await req.json()) as { image?: string; roomCode?: string; difficulty?: string };
+    difficulty = parseDifficulty(body.difficulty);
     dataUrl = body.image;
     roomCode = typeof body.roomCode === "string" ? body.roomCode.trim() : undefined;
   } catch {
@@ -85,11 +90,21 @@ export async function POST(req: NextRequest): Promise<NextResponse<GuessResult>>
   const base64 = dataUrl.split(",", 2)[1] ?? "";
   const mediaType = dataUrl.slice(5, dataUrl.indexOf(";")) || "image/png";
 
+  const altCount = GUESS.alternatives[difficulty];
   const prompt =
     "Estamos jugando Pictionary. Este es un garabato en progreso sobre un lienzo. " +
     "Adivina qué se está dibujando. Responde SOLO con JSON estricto, sin prosa ni bloques de código: " +
-    '{"guess":"<un sustantivo común>","alternatives":["<sustantivo>","<sustantivo>"]}. ' +
+    (altCount > 0
+      ? '{"guess":"<un sustantivo común>","alternatives":[' +
+        Array.from({ length: altCount }, () => '"<sustantivo>"').join(",") +
+        "]}. "
+      : '{"guess":"<un sustantivo común>","alternatives":[]}. ') +
     "Usa sustantivos EN ESPAÑOL, cotidianos, en singular y en minúscula. " +
+    (difficulty === "easy"
+      ? "Da solo tu primera impresión, sin pensarlo mucho. "
+      : difficulty === "hard"
+        ? "Fíjate en cada rasgo del dibujo y en las proporciones; las alternativas deben ser tus mejores candidatos distintos entre sí. "
+        : "") +
     "Si aún es pronto para saberlo, da igualmente tu mejor intento.";
 
   const controller = new AbortController();
@@ -115,13 +130,23 @@ export async function POST(req: NextRequest): Promise<NextResponse<GuessResult>>
         ],
         generationConfig: {
           maxOutputTokens: 512,
-          temperature: 0.4,
+          temperature: GUESS.temperature[difficulty],
         },
       }),
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
+
+    if (res.status === 429) {
+      // Free-tier quota (per minute, shared by the whole key): tell the client
+      // to wait out Gemini's own retry delay instead of treating it as a failure.
+      const detail = await res.text();
+      const m = /"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(detail);
+      const backoffMs = Math.min(30_000, Math.max(6_000, m ? Math.ceil(Number(m[1]) * 1000) : 8_000));
+      console.error(`[api/guess] Gemini 429 — client should back off ${backoffMs}ms`);
+      return NextResponse.json({ ok: false, skip: true, reason: "quota", backoffMs }, { status: 429 });
+    }
 
     if (!res.ok) {
       const detail = await res.text();
@@ -143,6 +168,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<GuessResult>>
       return NextResponse.json({ ok: false, reason: "unparseable" });
     }
     console.log("[api/guess] AI guess:", parsed.guess);
+    // The model ignores "no alternatives" in the prompt, and the client counts
+    // alternatives as wins — so enforce the level's allowance here.
+    parsed.alternatives = parsed.alternatives.slice(0, altCount);
     return NextResponse.json({ ok: true, ...parsed });
   } catch (err) {
     clearTimeout(timeoutId);
