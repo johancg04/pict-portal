@@ -1141,10 +1141,11 @@ export default function Game({
   // ---- Scoreboard from round winners in the current game -------------------
   // Tallied from round-end winners (not chat "correct") so it shares the same
   // reset baseline as roundsPlayed — "Play again" clears the board too.
-  const scores = useMemo(() => {
+  const scoreData = useMemo(() => {
     const map = new Map<string, number>();
     // Track back-to-back wins to reward streaks. A round that ends with no
     // winner (timeout / abandon) breaks the streak.
+    const wins = new Map<string, number>();
     let lastWinner: string | null = null;
     let streak = 0;
     game.messages.forEach((m, i) => {
@@ -1161,14 +1162,27 @@ export default function Game({
       const pts = c.points ?? 1;
       streak = key === lastWinner ? streak + 1 : 0;
       lastWinner = key;
+      wins.set(key, (wins.get(key) ?? 0) + 1);
       map.set(key, (map.get(key) ?? 0) + pts + streakBonus(streak));
       // The drawer's pay (present on rounds recorded after drawers got paid).
       if (c.drawer && c.drawerPoints) {
         map.set(c.drawer, (map.get(c.drawer) ?? 0) + c.drawerPoints);
       }
     });
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
+    // Ties on points are broken by who guessed more words; anyone still level
+    // with the leader after that shares the win.
+    const entries = [...map.entries()].sort(
+      (a, b) => b[1] - a[1] || (wins.get(b[0]) ?? 0) - (wins.get(a[0]) ?? 0),
+    );
+    const lead = entries[0];
+    const leaders = lead
+      ? entries
+          .filter(([n, pts]) => pts === lead[1] && (wins.get(n) ?? 0) === (wins.get(lead[0]) ?? 0))
+          .map(([n]) => n)
+      : [];
+    return { entries, leaders };
   }, [game.messages, lastResetIdx]);
+  const scores = scoreData.entries;
 
   // Drawings from finished rounds in the current game, for the podium gallery.
   const gallery = useMemo(() => {
@@ -1399,6 +1413,7 @@ export default function Game({
       {gameOver && (
         <Podium
           scores={scores}
+          leaders={scoreData.leaders}
           totalRounds={totalRounds}
           gallery={gallery}
           onNewGame={startNewGame}

@@ -8,12 +8,15 @@ export type GalleryItem = { image: string; word: string; winner?: string; ai?: b
 
 export default function Podium({
   scores,
+  leaders = [],
   totalRounds,
   gallery = [],
   onNewGame,
   onLeave,
 }: {
   scores: [string, number][];
+  /** Everyone level with the winner (same points and same words guessed). */
+  leaders?: string[];
   totalRounds: number;
   gallery?: GalleryItem[];
   onNewGame: () => void;
@@ -37,7 +40,15 @@ export default function Podium({
       <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-edge bg-panel p-8 text-center shadow-xl">
         <div className="text-4xl">🏆</div>
         <h2 className="mt-2 text-xl font-semibold">
-          {winner ? (
+          {leaders.length > 1 ? (
+            <>
+              ¡Empate entre{" "}
+              <span className="text-accent">
+                {leaders.map((n) => (n === "🤖 IA" ? "la IA 🤖" : n)).join(" y ")}
+              </span>
+              !
+            </>
+          ) : winner ? (
             <>
               ¡Ganó <span className="text-accent">{winner === "🤖 IA" ? "la IA 🤖" : winner}</span>!
             </>

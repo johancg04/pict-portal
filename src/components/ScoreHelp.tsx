@@ -82,8 +82,8 @@ export default function ScoreHelp({ label = false, laps = 0 }: { label?: boolean
                 Cuanto más rápido aciertas, más puntos.
               </Rule>
               <Rule icon="✏️" title="Dibujar también suma">
-                Quien dibuja no puede adivinar, así que cobra el <b>promedio</b> de lo que ganaron los
-                adivinadores. Dibujar vale lo mismo que adivinar.
+                Quien dibuja no puede adivinar, así que cobra una <b>parte</b> de lo que gana quien acierta
+                (los puntos repartidos entre todos los participantes). Un buen dibujo siempre suma.
               </Rule>
               <Rule icon="🔥" title="Racha">
                 Aciertas rondas seguidas: <b>+{STREAK_BONUS}</b> la segunda y <b>+{STREAK_MAX}</b> desde la
