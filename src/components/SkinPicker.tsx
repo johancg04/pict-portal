@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useSheet } from "@/lib/useSheet";
 import {
   MotionLevel,
   SKINS,
@@ -44,26 +45,7 @@ export default function SkinPicker({ label = false }: { label?: boolean }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!open) return;
-    sheetRef.current?.querySelector<HTMLButtonElement>("[aria-pressed='true']")?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        btnRef.current?.focus();
-      }
-    };
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (!sheetRef.current?.contains(t) && !btnRef.current?.contains(t)) setOpen(false);
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("pointerdown", onDown);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("pointerdown", onDown);
-    };
-  }, [open]);
+  useSheet(open, () => setOpen(false), btnRef, sheetRef, "[aria-pressed='true']");
 
   function update(next: SkinPrefs) {
     setPrefs(next);

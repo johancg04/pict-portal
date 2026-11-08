@@ -45,7 +45,9 @@ export default function Podium({
             "Fin de la partida"
           )}
         </h2>
-        <p className="mt-1 text-sm text-fg/50">{totalRounds} rondas jugadas</p>
+        <p className="mt-1 text-sm text-fg/50">
+          {totalRounds} {totalRounds === 1 ? "ronda jugada" : "rondas jugadas"}
+        </p>
 
         {scores.length === 0 ? (
           <p className="mt-6 text-sm text-fg/50">Nadie anotó puntos esta vez.</p>

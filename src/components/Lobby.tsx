@@ -5,12 +5,17 @@ import Image from "next/image";
 import PlayerBadge from "./PlayerBadge";
 import ThemeToggle from "./ThemeToggle";
 import SkinPicker from "./SkinPicker";
+import ScoreHelp from "./ScoreHelp";
+import SoundPanel from "./SoundPanel";
+import { DEFAULT_LAPS, LAP_OPTIONS, MAX_LAPS, MIN_LAPS, parseLaps } from "@/lib/scoring";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/room";
 import { prewarmRoom } from "@/lib/realtime";
 import { parseCustomWords } from "@/lib/words";
+import { playSound, setMusicMode } from "@/lib/sound";
+import { DIFFICULTY_INFO } from "@/lib/difficulty";
 import { AiDifficulty } from "@/lib/types";
 
-const ROUND_OPTIONS = [3, 5, 10];
+const LAP_CHOICES = LAP_OPTIONS;
 const DIFFICULTY_OPTIONS: { value: AiDifficulty; label: string }[] = [
   { value: "easy", label: "Fácil" },
   { value: "normal", label: "Normal" },
@@ -23,7 +28,7 @@ export default function Lobby({
   onJoin: (
     name: string,
     roomCode: string,
-    totalRounds?: number,
+    laps?: number,
     aiDifficulty?: AiDifficulty,
     customWords?: string[],
   ) => void;
@@ -31,13 +36,19 @@ export default function Lobby({
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"create" | "join">("create");
   const [joinCode, setJoinCode] = useState("");
-  const [rounds, setRounds] = useState(5);
+  const [laps, setLaps] = useState<number>(DEFAULT_LAPS);
+  // "Otra": the player types their own number of laps instead of a preset.
+  const [customLaps, setCustomLaps] = useState(false);
+  const [customLapsText, setCustomLapsText] = useState("");
+  const lapsValue = customLaps ? parseLaps(customLapsText) : laps;
   const [difficulty, setDifficulty] = useState<AiDifficulty>("normal");
   const [customWordsText, setCustomWordsText] = useState("");
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState<string | null>(null)
-  const [wordsReady, setWordsReady] = useState(false)
-  const customWordCount = parseCustomWords(customWordsText).length;
+  // AI-generated words stay out of the UI: the host would see them and know the
+  // answers in advance. Only a count is shown.
+  const [generatedWords, setGeneratedWords] = useState<string[]>([])
+  const customWordCount = generatedWords.length > 0 ? generatedWords.length : parseCustomWords(customWordsText).length;
 
   // Generated once per visit (not at submit time) so it can double as the
   // room to prewarm below — reusing the exact code we're about to create.
@@ -45,7 +56,9 @@ export default function Lobby({
 
   const trimmed = name.trim();
   const trimmedCode = normalizeRoomCode(joinCode);
-  const canSubmit = trimmed.length > 0 && (mode === "create" || trimmedCode.length > 0);
+  const canSubmit =
+    trimmed.length > 0 &&
+    (mode === "create" ? lapsValue !== null : trimmedCode.length > 0);
 
   // Opens the room's channels ahead of time, while the user is still filling in
   // the form. Joining the Supabase channels takes a moment; starting it here
@@ -59,6 +72,13 @@ export default function Lobby({
     if (!pendingRoomCode) return;
     return prewarmRoom(pendingRoomCode);
   }, [pendingRoomCode]);
+
+  // Calm music from the moment the app opens (it starts on the first tap/click,
+  // since browsers don't allow sound before that).
+  useEffect(() => {
+    setMusicMode("wait");
+    return () => setMusicMode("off");
+  }, []);
 
   async function generateWordsWithIA() {
     const topic = customWordsText.trim();
@@ -82,8 +102,7 @@ export default function Lobby({
         throw new Error("Respuesta vacía de la IA.");
       }
 
-      setCustomWordsText(data.words.join(", "))
-      setWordsReady(true)
+      setGeneratedWords(parseCustomWords(data.words.join(", ")))
 
     } catch(err) {
       setGenerateError(err instanceof Error ? err.message : "Error inesperado.")
@@ -99,7 +118,7 @@ export default function Lobby({
 
     const rawWords = parseCustomWords(customWordsText)
 
-    if(mode === "create" && rawWords.length > 0 && rawWords.length <= 2 && !wordsReady) {
+    if(mode === "create" && generatedWords.length === 0 && rawWords.length > 0 && rawWords.length <= 2) {
       setGenerateError(
         "Parece que escribiste un tema sin generar las palabras. Pulsa 'Generar con IA' o escribe varias palabras separadas por coma."
       )
@@ -108,18 +127,28 @@ export default function Lobby({
 
 
 
-    const customWords = mode === "create" ? parseCustomWords(customWordsText) : [];
+    // The submit click is the user gesture that unlocks audio: confirm with a start jingle.
+    playSound("yourTurn");
+
+    const customWords =
+      mode === "create" ? (generatedWords.length > 0 ? generatedWords : parseCustomWords(customWordsText)) : [];
     onJoin(
       trimmed,
       mode === "create" ? createdCode : trimmedCode,
-      mode === "create" ? rounds : undefined,
+      mode === "create" ? (lapsValue ?? DEFAULT_LAPS) : undefined,
       mode === "create" ? difficulty : undefined,
       customWords.length > 0 ? customWords : undefined,
     );
   }
 
   return (
-    <div className="relative grid min-h-screen place-items-center overflow-hidden p-6">
+    <div
+      onPointerDownCapture={(e) => {
+        const b = (e.target as HTMLElement).closest("button");
+        if (b && !b.disabled && b.type !== "submit") playSound("click");
+      }}
+      className="relative grid min-h-screen place-items-center overflow-hidden p-6"
+    >
       {/* Decorative background — purely visual, never intercepts clicks */}
       <div className="pp-lobby-decor pointer-events-none absolute inset-0">
         <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-[#22D3C5]/20 blur-3xl" />
@@ -153,11 +182,13 @@ export default function Lobby({
 
         {/* Card */}
         <div className="pp-panel pp-lobby mt-6 w-full rounded-2xl border border-edge bg-panel p-6 shadow-xl">
-          <div className="flex items-center justify-between gap-2">
-            <span className="pp-chip inline-flex items-center gap-1.5 rounded-full border border-edge px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg/60">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="pp-chip inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-edge px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-fg/60">
               <span className="text-accent">✦</span> IA en la partida
             </span>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2">
+              <SoundPanel />
+              <ScoreHelp />
               <SkinPicker label />
               <ThemeToggle />
             </div>
@@ -208,16 +239,20 @@ export default function Lobby({
             {mode === "create" ? (
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-fg/80">
-                  Rondas
+                  Vueltas
                 </label>
                 <div className="flex gap-1 rounded-full border border-edge p-1">
-                  {ROUND_OPTIONS.map((n) => (
+                  {LAP_CHOICES.map((n) => (
                     <button
                       key={n}
                       type="button"
-                      onClick={() => setRounds(n)}
+                      aria-pressed={!customLaps && laps === n}
+                      onClick={() => {
+                        setLaps(n);
+                        setCustomLaps(false);
+                      }}
                       className={`flex-1 rounded-full py-2 text-sm font-medium transition ${
-                        rounds === n
+                        !customLaps && laps === n
                           ? "bg-gradient-to-r from-accent to-purple-500 text-white shadow"
                           : "text-fg/60 hover:text-fg/90"
                       }`}
@@ -225,7 +260,48 @@ export default function Lobby({
                       {n}
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    aria-pressed={customLaps}
+                    onClick={() => setCustomLaps(true)}
+                    className={`flex-1 rounded-full py-2 text-sm font-medium transition ${
+                      customLaps
+                        ? "bg-gradient-to-r from-accent to-purple-500 text-white shadow"
+                        : "text-fg/60 hover:text-fg/90"
+                    }`}
+                  >
+                    Otra
+                  </button>
                 </div>
+                {customLaps && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <label htmlFor="custom-laps" className="text-sm text-fg/70">
+                      Número de vueltas
+                    </label>
+                    <input
+                      id="custom-laps"
+                      type="number"
+                      inputMode="numeric"
+                      min={MIN_LAPS}
+                      max={MAX_LAPS}
+                      autoFocus
+                      value={customLapsText}
+                      onChange={(e) => setCustomLapsText(e.target.value)}
+                      placeholder={`${MIN_LAPS}–${MAX_LAPS}`}
+                      aria-invalid={customLapsText !== "" && lapsValue === null}
+                      className="pp-input w-24 rounded-xl border border-edge bg-ink px-3 py-2 text-center text-base outline-none placeholder:text-fg/30 focus:border-accent"
+                    />
+                  </div>
+                )}
+                {customLaps && customLapsText !== "" && lapsValue === null ? (
+                  <p className="mt-1 text-xs text-red-400">
+                    Elige un número entre {MIN_LAPS} y {MAX_LAPS}.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-fg/40">
+                    En cada vuelta todos dibujan una vez (la IA también), así nadie tiene ventaja.
+                  </p>
+                )}
               </div>
             ) : null}
 
@@ -250,6 +326,7 @@ export default function Lobby({
                     </button>
                   ))}
                 </div>
+                <p className="mt-1 text-xs text-fg/40">{DIFFICULTY_INFO[difficulty]}</p>
               </div>
             ) : null}
 
@@ -263,16 +340,17 @@ export default function Lobby({
                     type="button"
                     onClick={generateWordsWithIA}
                     disabled={!customWordsText.trim() || generating}
+                    title={generatedWords.length > 0 ? "Generar otras palabras con el mismo tema" : undefined}
                     className="inline-flex items-center gap-1 rounded-full border border-edge px-2.5 py-1 text-xs font-semibold text-fg/70 transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {generating ? "Generando…" : <>✦ Generar con IA</>}
+                    {generating ? "Generando…" : <>✦ {generatedWords.length > 0 ? "Regenerar" : "Generar con IA"}</>}
                   </button>
                 </div>
                 <textarea
                   value={customWordsText}
                   onChange={(e) => {
                     setCustomWordsText(e.target.value)
-                    setWordsReady(false)
+                    setGeneratedWords([])
                   }}
                   placeholder="Hogar, Cine, Deporte…"
                   rows={2}
@@ -282,7 +360,9 @@ export default function Lobby({
                   <p className="mt-1 text-xs text-red-400">{generateError}</p>
                 ) : (
                   <p className="mt-1 text-xs text-fg/40">
-                    {customWordCount > 0
+                    {generatedWords.length > 0
+                      ? `✓ ${generatedWords.length} palabras generadas por IA sobre «${customWordsText.trim()}». Son secretas para que nadie sepa qué saldrá.`
+                      : customWordCount > 0
                       ? `${customWordCount} palabra${customWordCount === 1 ? "" : "s"} — reemplazan el banco por defecto.`
                       : "Escribe un tema y pulsa 'Generar con IA', o escribe tus propias palabras separadas por coma o salto de línea."}
                   </p>

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { DRAW, parseDifficulty } from "@/lib/difficulty";
 
 // Server-only route: the AI takes its turn as the *drawer*. Given a word, it
 // returns a doodle as normalized polylines (0..1) that the client scales to
@@ -22,8 +23,10 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
   }
 
   let word: string | undefined;
+  let difficulty = parseDifficulty(undefined);
   try {
-    const body = (await req.json()) as { word?: string };
+    const body = (await req.json()) as { word?: string; difficulty?: string };
+    difficulty = parseDifficulty(body.difficulty);
     word = typeof body.word === "string" ? body.word.trim() : undefined;
   } catch {
     return NextResponse.json({ ok: false, reason: "bad_request" }, { status: 400 });
@@ -38,7 +41,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
     `Responde SOLO con JSON estricto, sin prosa ni bloques de código:\n` +
     `{"strokes":[{"points":[[x,y],[x,y],...]}, ...]}\n` +
     `Reglas: las coordenadas son decimales normalizados de 0 a 1 ("x" de izquierda a derecha, "y" de arriba abajo).\n` +
-    `Usa entre 3 y 12 trazos. Cada trazo es una polilínea conectada de 2 a 40 puntos.\n` +
+    DRAW.rules[difficulty] +
     `Llena el lienzo: abarca aproximadamente x 0.15-0.85 e y 0.15-0.85. Dibuja el objeto completo y centrado.\n` +
     `Para las curvas, usa muchos segmentos cortos. Cierra las formas repitiendo el primer punto al final.`;
 
@@ -58,11 +61,19 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 4096, temperature: 0.6 },
+          generationConfig: { maxOutputTokens: 4096, temperature: DRAW.temperature[difficulty] },
         }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+
+      if (res.status === 429 && attempt === 0) {
+        // Per-minute quota: wait a few seconds and take the retry we already have.
+        console.error("[api/draw] Gemini 429 — waiting before retry");
+        await new Promise((r) => setTimeout(r, 6000));
+        lastReason = "gemini_429";
+        continue;
+      }
 
       if (!res.ok) {
         const detail = await res.text();

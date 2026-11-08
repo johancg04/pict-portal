@@ -49,12 +49,26 @@ export type GameMsg =
       // hosts the round: it fetches the strokes, publishes them, and holds
       // the word to validate guesses, exactly as a human drawer would.
       aiDrawing?: boolean;
+      // How many participants (players + the AI when it plays) take turns at
+      // the moment the round starts. The first round of a game freezes this as
+      // the lap size, so "N laps" means the same number of rounds for everyone.
+      participants?: number;
+      // How many times the word has been changed this turn (0 for a fresh
+      // turn). A change republishes the round-start with the SAME `endsAt`, so
+      // the clock keeps running; this counter is what tells clients that the
+      // word (and therefore the board) is new.
+      reroll?: number;
     }
   | {
       kind: "round-end";
       word: string;
       winner?: string;
       ai?: boolean;
+      // Who held the pen this round (a display name, or "🤖 IA") and what they
+      // earned: the average of what the guessers got. Absent on rounds
+      // recorded before drawers were paid.
+      drawer?: string;
+      drawerPoints?: number;
       // Points awarded to the winner this round. Speed-based (faster guess =
       // more), so the scoreboard rewards quick reads instead of a flat +1.
       // Optional for backward-compatibility with rounds recorded before this
@@ -94,6 +108,9 @@ export type GameMsg =
   // holds the word (the drawer, or the host of an AI turn) can act on it —
   // so the ask is broadcast and that client answers.
   | { kind: "round-request"; what: "hint" | "skip" }
+  // Published by the word-holder when it actually granted a request, so every
+  // client counts the same per-player help budget (hints and word changes).
+  | { kind: "budget-use"; what: "hint" | "skip"; by: string }
   // Total rounds for this game, chosen by whoever created the room. Broadcast
   // once so every client (including late joiners, via history) agrees on when
   // the game ends and the podium shows. 0 = unlimited (legacy / no config).
@@ -103,7 +120,11 @@ export type GameMsg =
   // room uses the default word bank.
   | {
       kind: "game-config";
+      // Legacy: a fixed round count. New rooms send 0 here and use `laps`.
       totalRounds: number;
+      // Game length in laps; one lap = every participant draws once. The total
+      // number of rounds is laps × participants at the start of the game.
+      laps?: number;
       aiDifficulty?: AiDifficulty;
       customWords?: string[];
     }

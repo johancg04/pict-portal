@@ -4,6 +4,7 @@ import { MutableRefObject, useCallback, useEffect, useRef, useState } from "reac
 import { useChannel } from "@/lib/realtime";
 import Cursors, { CursorReporter, CursorTip } from "./Cursors";
 import { DrawMsg, StrokePoint, drawChannel } from "@/lib/types";
+import { penMove, penStop, playSound } from "@/lib/sound";
 
 const W = 900;
 const H = 600;
@@ -264,9 +265,14 @@ export default function Canvas({
       const c = msg.content;
       if (c.kind === "clear") {
         enqueue({ kind: "clear" });
+        playSound("clear");
         return;
       }
       if (!c.points.length) return;
+      // The scratch of someone else's pen: speed = distance covered per flush.
+      let len = 0;
+      for (let i = 1; i < c.points.length; i++) len += Math.sqrt(dist2(c.points[i], c.points[i - 1]));
+      penMove(len / FLUSH_MS / 1.5, true);
       enqueue({ kind: "stroke", pts: c.points, color: resolveColor(c.color), size: c.size, i: 0 });
       // While drawing, the pen tip *is* the cursor: move it from the stroke
       // instead of paying for a separate cursor stream.
@@ -310,6 +316,9 @@ export default function Canvas({
     drawStrokeRef.current = (points: StrokePoint[]) => {
       if (points.length === 0) return;
       enqueue({ kind: "stroke", pts: points, color: inkRef.current, size, i: 0 });
+      let len = 0;
+      for (let i = 1; i < points.length; i++) len += Math.sqrt(dist2(points[i], points[i - 1]));
+      penMove(len / 240 / 1.5, true); // the AI's pace (see AI_STROKE_MS in Game.tsx)
       void send({ content: { kind: "stroke", points, color: "auto", size } });
     };
     return () => {
@@ -331,6 +340,7 @@ export default function Canvas({
     let wire: StrokePoint[] = []; // points waiting to be broadcast
     let tail: StrokePoint | null = null; // last point already broadcast (overlap)
     let lastWire: StrokePoint | null = null;
+    let lastMoveAt = 0; // for the pen's scratch: how fast the stroke is going
     let timer: ReturnType<typeof setTimeout> | null = null;
 
     const toPt = (e: PointerEvent): StrokePoint => ({
@@ -381,6 +391,7 @@ export default function Canvas({
       tail = null;
       lastWire = null;
       wire = [];
+      lastMoveAt = performance.now();
       queueWire(p, true);
     };
     const extend = (p: StrokePoint) => {
@@ -388,6 +399,9 @@ export default function Canvas({
       if (dist2(p, prev) < 0.25) return;
       const ctx = getCtx();
       if (!ctx) return;
+      const t = performance.now();
+      penMove(Math.sqrt(dist2(p, prev)) / Math.max(1, t - lastMoveAt) / 1.5);
+      lastMoveAt = t;
       const m = mid(prev, p);
       ctx.strokeStyle = paintColor();
       ctx.lineWidth = toolRef.current.size;
@@ -414,6 +428,7 @@ export default function Canvas({
       flush();
       prev = midPt = null;
       tail = null;
+      penStop();
       releasePageScroll();
     };
 
@@ -469,6 +484,7 @@ export default function Canvas({
 
   function onClear() {
     queueRef.current = [];
+    playSound("clear");
     clearCanvas();
     void send({ content: { kind: "clear" } });
   }
