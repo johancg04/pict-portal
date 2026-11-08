@@ -160,7 +160,7 @@ export default function PlayersPanel({
   }
 
   return (
-    <div className="pp-panel pp-players flex w-full min-w-0 flex-col gap-2 rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4 lg:col-start-2 lg:row-start-1 lg:max-h-[40dvh] lg:overflow-y-auto xl:col-start-1 xl:row-start-1 xl:h-full xl:max-h-none">
+    <div className="pp-panel pp-players flex w-full min-w-0 flex-col gap-2 rounded-xl border border-edge bg-panel px-3 py-3 sm:px-4 xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
       <span className="pp-panel-title text-xs uppercase tracking-wide text-fg/40">
         Jugadores · {roster.length}
       </span>

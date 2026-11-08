@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DRAW, parseDifficulty } from "@/lib/difficulty";
+import { cachedDrawings, saveDrawing, VARIANTS_PER_WORD } from "@/lib/drawCache";
 
 // Server-only route: the AI takes its turn as the *drawer*. Given a word, it
 // returns a doodle as normalized polylines (0..1) that the client scales to
@@ -9,10 +10,15 @@ import { DRAW, parseDifficulty } from "@/lib/difficulty";
 // Uses Google Gemini (free tier). Get a key at https://aistudio.google.com/apikey
 
 export const runtime = "nodejs";
+// Room for two Gemini attempts (12 s each) plus a quota back-off in between;
+// without it the platform's default limit could kill the retry mid-flight.
+export const maxDuration = 40;
 
 type Point = { x: number; y: number };
 type Stroke = { points: Point[] };
-type DrawResult = { ok: boolean; strokes?: Stroke[]; reason?: string };
+type DrawResult = { ok: boolean; strokes?: Stroke[]; reason?: string; cached?: boolean };
+
+const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)];
 
 export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -33,6 +39,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
   }
   if (!word) {
     return NextResponse.json({ ok: false, reason: "no_word" }, { status: 400 });
+  }
+
+  // Reuse a saved doodle once this word has enough of them: no tokens, instant.
+  const saved = await cachedDrawings(word, difficulty);
+  if (saved.length >= VARIANTS_PER_WORD) {
+    console.log(`[api/draw] "${word}" from cache (${saved.length} saved)`);
+    return NextResponse.json({ ok: true, strokes: pick(saved), cached: true });
   }
 
   const prompt =
@@ -68,9 +81,13 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
       clearTimeout(timeoutId);
 
       if (res.status === 429 && attempt === 0) {
-        // Per-minute quota: wait a few seconds and take the retry we already have.
-        console.error("[api/draw] Gemini 429 — waiting before retry");
-        await new Promise((r) => setTimeout(r, 6000));
+        // Per-minute quota: wait as long as Gemini asks (within reason) and
+        // take the retry we already have.
+        const detail = await res.text();
+        const m = /"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(detail);
+        const waitMs = Math.min(12_000, Math.max(4_000, m ? Math.ceil(Number(m[1]) * 1000) : 6_000));
+        console.error(`[api/draw] Gemini 429 — waiting ${waitMs}ms before retry`);
+        await new Promise((r) => setTimeout(r, waitMs));
         lastReason = "gemini_429";
         continue;
       }
@@ -78,10 +95,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
       if (!res.ok) {
         const detail = await res.text();
         console.error(`[api/draw] Gemini ${res.status}:`, detail.slice(0, 400));
-        return NextResponse.json(
-          { ok: false, reason: `gemini_${res.status}` },
-          { status: 502 },
-        );
+        lastReason = `gemini_${res.status}`;
+        break; // falls through to the saved-doodle fallback below
       }
 
       const data = (await res.json()) as {
@@ -92,6 +107,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
       const strokes = parseStrokes(text);
       if (strokes) {
         console.log(`[api/draw] drew "${word}" as ${strokes.length} strokes`);
+        await saveDrawing(word, difficulty, strokes);
         return NextResponse.json({ ok: true, strokes });
       }
       // Unparseable is also worth one more shot — it's the same coin flip.
@@ -106,6 +122,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
     }
   }
 
+  // Gemini failed (quota, timeout…): a saved doodle beats skipping the turn.
+  if (saved.length > 0) {
+    console.log(`[api/draw] "${word}" from cache after ${lastReason}`);
+    return NextResponse.json({ ok: true, strokes: pick(saved), cached: true });
+  }
   return NextResponse.json({ ok: false, reason: lastReason }, { status: 502 });
 }
 

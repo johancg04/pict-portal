@@ -22,7 +22,8 @@ export type SoundEvent =
   | "timeUp" // the round ended with no winner
   | "hint" // a hint was given
   | "reaction" // an emoji reaction
-  | "victory" // the game is over
+  | "victory" // the game is over and you won (or share the win)
+  | "defeat" // the game is over and you did not win
   | "join" // someone came into the room
   | "leave" // someone left the room
   | "clear" // the board was wiped
@@ -39,14 +40,19 @@ export const SOUND_EVENTS: SoundEvent[] = [
   "hint",
   "reaction",
   "victory",
+  "defeat",
   "join",
   "leave",
   "clear",
   "click",
 ];
 
-/** One note: frequency (Hz), start offset and duration (s), optional glide target and relative volume. */
-type Note = { f: number; at: number; d: number; to?: number; v?: number };
+/**
+ * One note: frequency (Hz), start offset and duration (s), optional glide
+ * target and relative volume. `w` forces a waveform for this note regardless
+ * of the pack (used by the shared 8-bit victory fanfare).
+ */
+type Note = { f: number; at: number; d: number; to?: number; v?: number; w?: OscillatorType };
 
 export type PackId = "suave" | "synth" | "cristal" | "terminal" | "arcade";
 export type PackChoice = PackId | "auto";
@@ -81,6 +87,55 @@ function arp(freqs: number[], step: number, d: number, v = 1): Note[] {
   return freqs.map((f, i) => ({ f, at: i * step, d, v }));
 }
 
+/**
+ * End-of-game fanfare in the style of an 8-bit platformer "level clear":
+ * three fast rising square-wave arpeggios over the classic bVI–bVII–I cadence
+ * (A♭ → B♭ → C), then a quick run up to a held high C. Original melody; it is
+ * the same in every pack so the win always sounds like a win.
+ */
+const RETRO_VICTORY: Note[] = (() => {
+  const step = 0.075; // one triplet note
+  const bar = 0.45; // three notes + a held fourth
+  const bars: [number[], number][] = [
+    [[E5, G5, C6, E6], 130.81], // C   (bass C3)
+    [[622.25, 830.61, C6, 1244.51], 103.83], // A♭  (bass A♭2)
+    [[698.46, 932.33, 1174.66, 1396.91], 116.54], // B♭ (bass B♭2)
+  ];
+  const notes: Note[] = [];
+  bars.forEach(([lead, bass], b) => {
+    const t = b * bar;
+    lead.forEach((f, i) => notes.push({ f, at: t + i * step, d: i < 3 ? step * 0.9 : 0.2, w: "square", v: 0.9 }));
+    notes.push({ f: bass, at: t, d: bar * 0.95, w: "triangle", v: 1.4 });
+  });
+  const end = bars.length * bar;
+  [C6, E6, 1567.98].forEach((f, i) => notes.push({ f, at: end + i * 0.06, d: 0.055, w: "square", v: 0.9 }));
+  notes.push({ f: 2093, at: end + 0.18, d: 0.75, w: "square", v: 0.85 });
+  notes.push({ f: 1567.98, at: end + 0.18, d: 0.75, w: "square", v: 0.45 });
+  notes.push({ f: 130.81, at: end + 0.18, d: 0.75, w: "triangle", v: 1.4 });
+  return notes;
+})();
+
+/**
+ * End-of-game "you lost" jingle in the same 8-bit style: a sad descending
+ * "wah-wah-wah-waaah" in square waves, then a low run that slides down.
+ * Original melody, shared by every pack.
+ */
+const RETRO_DEFEAT: Note[] = [
+  { f: G5, at: 0, d: 0.17, w: "square", v: 0.8 },
+  { f: 739.99, at: 0.22, d: 0.17, w: "square", v: 0.8 },
+  { f: 698.46, at: 0.44, d: 0.17, w: "square", v: 0.8 },
+  { f: E5, at: 0.66, d: 0.55, to: 622.25, w: "square", v: 0.8 },
+  { f: 130.81, at: 0, d: 0.62, w: "triangle", v: 1.3 },
+  { f: 103.83, at: 0.66, d: 0.55, w: "triangle", v: 1.3 },
+  { f: C5, at: 1.3, d: 0.1, w: "square", v: 0.7 },
+  { f: G4, at: 1.42, d: 0.1, w: "square", v: 0.7 },
+  { f: C4, at: 1.54, d: 0.45, to: 196, w: "square", v: 0.7 },
+  { f: 65.41, at: 1.54, d: 0.45, w: "triangle", v: 1.3 },
+];
+
+/** Base loudness of the shared retro notes (independent of the pack's peak). */
+const RETRO_PEAK = 0.1;
+
 export const PACKS: Record<PackId, Pack> = {
   // Clásico: rounded triangle tones, the sounds the game always had.
   suave: {
@@ -100,7 +155,8 @@ export const PACKS: Record<PackId, Pack> = {
       timeUp: arp([G4, E4, C4], 0.12, 0.3, 0.6),
       hint: arp([G5, C6], 0.07, 0.18, 0.5),
       reaction: [{ f: C6, at: 0, d: 0.1, to: E6, v: 0.3 }],
-      victory: arp([C5, E5, G5, C6, E6], 0.11, 0.5, 1.1),
+      victory: RETRO_VICTORY,
+      defeat: RETRO_DEFEAT,
       join: arp([E5, G5], 0.06, 0.12, 0.4),
       leave: arp([G5, E5], 0.06, 0.14, 0.3),
       clear: [{ f: A5, at: 0, d: 0.18, to: 330, v: 0.3 }],
@@ -126,7 +182,8 @@ export const PACKS: Record<PackId, Pack> = {
       timeUp: [{ f: A4, at: 0, d: 0.5, to: 110, v: 0.7 }],
       hint: [{ f: 330, at: 0, d: 0.15, to: 660, v: 0.5 }],
       reaction: [{ f: 660, at: 0, d: 0.12, to: 990, v: 0.35 }],
-      victory: arp([C4, E4, G4, C5, E5, G5], 0.09, 0.5, 1.1),
+      victory: RETRO_VICTORY,
+      defeat: RETRO_DEFEAT,
       join: [{ f: 330, at: 0, d: 0.15, to: 660, v: 0.4 }],
       leave: [{ f: 660, at: 0, d: 0.15, to: 330, v: 0.4 }],
       clear: [{ f: A4, at: 0, d: 0.25, to: 110, v: 0.45 }],
@@ -155,7 +212,8 @@ export const PACKS: Record<PackId, Pack> = {
         { f: 2093, at: 0.1, d: 0.4, v: 0.3 },
       ],
       reaction: [{ f: 2093, at: 0, d: 0.2, v: 0.28 }],
-      victory: arp([C6, E6, 1568, 2093, 2637], 0.12, 0.9, 0.6),
+      victory: RETRO_VICTORY,
+      defeat: RETRO_DEFEAT,
       join: arp([E6, 1568], 0.08, 0.35, 0.35),
       leave: arp([1568, E6], 0.08, 0.35, 0.3),
       clear: [{ f: 2093, at: 0, d: 0.3, to: C6, v: 0.25 }],
@@ -188,7 +246,8 @@ export const PACKS: Record<PackId, Pack> = {
       timeUp: [{ f: 300, at: 0, d: 0.35, to: 120, v: 0.7 }],
       hint: arp([1500, 1500], 0.08, 0.05),
       reaction: [{ f: 2000, at: 0, d: 0.03, v: 0.4 }],
-      victory: arp([660, 880, 1320, 1760, 2093], 0.08, 0.2, 1.1),
+      victory: RETRO_VICTORY,
+      defeat: RETRO_DEFEAT,
       join: [
         { f: 1000, at: 0, d: 0.04, v: 0.5 },
         { f: 1400, at: 0.06, d: 0.06, v: 0.5 },
@@ -225,7 +284,8 @@ export const PACKS: Record<PackId, Pack> = {
       timeUp: arp([G4, 370, 349, E4], 0.1, 0.12),
       hint: arp([E5, A5], 0.05, 0.1, 0.6),
       reaction: [{ f: 1175, at: 0, d: 0.05, v: 0.4 }],
-      victory: arp([C5, C5, C5, E5, G5, C6], 0.1, 0.2, 1.1),
+      victory: RETRO_VICTORY,
+      defeat: RETRO_DEFEAT,
       join: arp([C5, G5], 0.05, 0.08, 0.6),
       leave: arp([G5, C5], 0.05, 0.08, 0.5),
       clear: [{ f: C6, at: 0, d: 0.2, to: C4, v: 0.6 }],
@@ -268,6 +328,11 @@ export function scheduleEvent(
   const base = ctx.currentTime + t0;
   for (const n of pack.events[event]) {
     const t = base + n.at;
+    if (n.w) {
+      // Shared retro note: own waveform and loudness, no filter or bell.
+      voice(ctx, dest, n.w, n.f, n.to, t, n.d, 0.004, RETRO_PEAK * (n.v ?? 1));
+      continue;
+    }
     const peak = pack.peak * (n.v ?? 1);
     voice(ctx, out, pack.wave, n.f, n.to, t, n.d, pack.attack, peak);
     if (pack.bell) voice(ctx, out, "sine", n.f * 2.76, n.to ? n.to * 2.76 : undefined, t, n.d * 0.7, pack.attack, peak * 0.35);
@@ -679,9 +744,12 @@ function eventLength(packId: PackId, event: SoundEvent): number {
 
 // Sounds that mark an outcome. If a round starts right after one of them (it
 // often does, the next round begins as soon as the last one ends), the start
-// jingle waits for the outcome to finish instead of playing on top of it.
-const OUTCOME_EVENTS: SoundEvent[] = ["timeUp", "correct", "otherCorrect", "victory"];
+// jingle waits for the outcome to finish instead of playing on top of it. The
+// end-of-game jingles wait the same way: the last guess of a game plays its
+// "correct" blip first, then the fanfare (or the defeat jingle).
+const OUTCOME_EVENTS: SoundEvent[] = ["timeUp", "correct", "otherCorrect", "victory", "defeat"];
 const START_EVENTS: SoundEvent[] = ["roundStart", "yourTurn"];
+const WAITING_EVENTS: SoundEvent[] = [...START_EVENTS, "victory", "defeat"];
 const MAX_WAIT_S = 0.9;
 let outcomeEndsAt = 0; // AudioContext time
 
@@ -713,9 +781,9 @@ export function playSound(event: SoundEvent, packOverride?: PackChoice) {
   if (c.state === "suspended") c.resume().catch(() => {});
   const pack = resolvePack(packOverride ?? p.pack);
   const t = c.currentTime;
-  const delay = START_EVENTS.includes(event) ? Math.min(MAX_WAIT_S, Math.max(0, outcomeEndsAt - t + 0.05)) : 0;
+  const delay = WAITING_EVENTS.includes(event) ? Math.min(MAX_WAIT_S, Math.max(0, outcomeEndsAt - t + 0.05)) : 0;
   scheduleEvent(c, masterGain, pack, event, delay);
-  if (OUTCOME_EVENTS.includes(event)) outcomeEndsAt = Math.max(outcomeEndsAt, t + eventLength(pack, event));
+  if (OUTCOME_EVENTS.includes(event)) outcomeEndsAt = Math.max(outcomeEndsAt, t + delay + eventLength(pack, event));
 }
 
 /** A short sample so players can hear a pack before choosing it. */

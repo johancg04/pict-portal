@@ -108,6 +108,8 @@ cp .env.local.example .env.local
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...                (clave anon pública)
 #   GEMINI_API_KEY=...               (clave de Google Gemini, opcional)
 #   GEMINI_MODEL=gemini-flash-lite-latest
+#   SUPABASE_SERVICE_ROLE_KEY=...    (opcional, solo servidor: guarda y reutiliza
+#                                     los dibujos de la IA en la tabla ai_drawings)
 
 # 3. Base de datos (una sola vez) / database (once)
 #   En el dashboard de Supabase: SQL Editor -> pega supabase/schema.sql -> Run

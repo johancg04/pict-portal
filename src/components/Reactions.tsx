@@ -63,7 +63,7 @@ export default function Reactions({ roomCode, name }: { roomCode: string; name: 
         ))}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1 sm:flex-col">
         {EMOJIS.map((e) => (
           <button
             key={e}

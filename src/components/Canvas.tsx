@@ -31,6 +31,26 @@ type Queued =
   | { kind: "stroke"; pts: StrokePoint[]; color: string; size: number; i: number }
   | { kind: "clear" };
 
+/**
+ * CSS cursor for the drawer: a pen painted in the current ink (its nib is the
+ * hotspot, so the line starts exactly under the tip), or an eraser. Outlined in
+ * white and navy so it stays visible on light and dark boards.
+ */
+function toolCursor(color: string, erasing: boolean): string {
+  const svg = erasing
+    ? `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'>` +
+      `<path d='M4 22l12-12 10 10-8 8H10z' fill='#ff8fb1' stroke='#fff' stroke-width='3' stroke-linejoin='round'/>` +
+      `<path d='M4 22l12-12 10 10-8 8H10z' fill='#ff8fb1' stroke='#1b1464' stroke-width='1.5' stroke-linejoin='round'/>` +
+      `<path d='M10 16l10 10' stroke='#1b1464' stroke-width='1.5'/></svg>`
+    : `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'>` +
+      `<path d='M3 29l3-8 17-17 5 5-17 17z' fill='none' stroke='#fff' stroke-width='3.5' stroke-linejoin='round'/>` +
+      `<path d='M6 21l17-17 5 5-17 17z' fill='${color}' stroke='#1b1464' stroke-width='1.5' stroke-linejoin='round'/>` +
+      `<path d='M3 29l3-8 5 5z' fill='#1b1464'/>` +
+      `<path d='M20 7l5 5' stroke='#fff' stroke-width='1.5' opacity='.8'/></svg>`;
+  const [x, y] = erasing ? [7, 25] : [3, 29];
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${x} ${y}, crosshair`;
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -497,7 +517,7 @@ export default function Canvas({
           width={W}
           height={H}
           className="aspect-[3/2] w-full touch-none select-none"
-          style={{ cursor: canDraw ? "crosshair" : "not-allowed", WebkitTouchCallout: "none" }}
+          style={{ cursor: canDraw ? toolCursor(color, erasing) : "not-allowed", WebkitTouchCallout: "none" }}
           aria-label={canDraw ? "Lienzo: dibuja aquí" : "Lienzo del dibujante"}
         />
         <Cursors roomCode={roomCode} name={name} enabled={canDraw} reportRef={cursorReportRef} tipRef={cursorTipRef} />
