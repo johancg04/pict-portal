@@ -32,3 +32,21 @@ create policy "anon can append room messages"
   on public.room_messages for insert
   to anon
   with check (true);
+
+-- Saved AI doodles (see src/lib/drawCache.ts): up to a few per word and
+-- difficulty, reused so the AI doesn't spend Gemini tokens drawing the same
+-- word every time. Only the server touches this table, with the service-role
+-- key (which bypasses RLS), so there are deliberately NO anon policies: the
+-- browser can neither read nor plant drawings.
+create table if not exists public.ai_drawings (
+  id         bigint generated always as identity primary key,
+  word_key   text        not null,             -- lowercase, no accents
+  difficulty text        not null check (difficulty in ('easy', 'normal', 'hard')),
+  strokes    jsonb       not null check (jsonb_typeof(strokes) = 'array'),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists ai_drawings_word_idx
+  on public.ai_drawings (word_key, difficulty);
+
+alter table public.ai_drawings enable row level security;

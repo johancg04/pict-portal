@@ -23,7 +23,7 @@ import {
   chatChannel,
   gameChannel,
 } from "@/lib/types";
-import { isCorrect, maskWord, pickWord, revealLetters } from "@/lib/words";
+import { isCorrect, maskWord, pickWord, recentWords, rememberWord, revealLetters } from "@/lib/words";
 import { DIFFICULTY_LABEL, GUESS } from "@/lib/difficulty";
 import { MusicMode, playSound, setMusicMode, useSoundPrefs } from "@/lib/sound";
 import { drawerPay, guessPoints, hintBudget, skipBudget, streakBonus, totalRoundsFor } from "@/lib/scoring";
@@ -516,6 +516,26 @@ export default function Game({
     chat.typing,
   ]);
 
+  // Every word already played in this room (all games, not just the current
+  // one), so "Nueva partida" doesn't reopen with the same words.
+  const playedWords = useMemo(() => {
+    const out: string[] = [];
+    for (const m of game.messages) {
+      if (m.content.kind === "round-end" && m.content.word && m.content.word !== "?") out.push(m.content.word);
+    }
+    return out;
+  }, [game.messages]);
+
+  /** Picks the next word: never one played in this room while others remain, and preferably not one this device saw lately. */
+  const nextWord = useCallback(
+    (alsoAvoid: string[] = []) => {
+      const word = pickWord(customWords, [[...playedWords, ...alsoAvoid], recentWords()]);
+      rememberWord(word);
+      return word;
+    },
+    [customWords, playedWords],
+  );
+
   // ---- Round control --------------------------------------------------------
   const lastStartRef = useRef(0); // local debounce against double-clicks
   const startRound = useCallback(
@@ -527,7 +547,7 @@ export default function Game({
       const now = Date.now();
       if (now - lastStartRef.current < 2000) return;
       lastStartRef.current = now;
-      const word = pickWord(customWords);
+      const word = nextWord();
       wordRef.current = word;
       endedRef.current = false;
       hintsRef.current = [];
@@ -546,7 +566,7 @@ export default function Game({
         },
       });
     },
-    [game.send, meId, name, round.active, customWords, turnOrder.length],
+    [game.send, meId, name, round.active, nextWord, turnOrder.length],
   );
 
   // Swap in a fresh word for the *same* turn. Publishing a new round-start
@@ -556,7 +576,8 @@ export default function Game({
   const reRollWord = useCallback(
     (aiDrawing: boolean) => {
       if (!meId) return;
-      const word = pickWord(customWords);
+      // Never hand back the word being skipped.
+      const word = nextWord(wordRef.current ? [wordRef.current] : []);
       wordRef.current = word;
       endedRef.current = false;
       hintsRef.current = [];
@@ -576,7 +597,7 @@ export default function Game({
         },
       });
     },
-    [game.send, meId, name, customWords],
+    [game.send, meId, name, nextWord],
   );
 
 
@@ -830,11 +851,40 @@ export default function Game({
   // doodle and plays it back through its own canvas — painting locally and
   // fanning out over the draw channel, point by point, so everyone watches it
   // appear like a human sketching rather than a finished image popping in.
+  // If Gemini can't draw a word (quota, slow answer, garbled output), the AI
+  // first swaps to another word and tries once more; only a second failure in
+  // the same turn ends the round. Keyed by the turn's deadline, which a word
+  // swap keeps, so it counts per turn. Doesn't touch the players' skip budget.
+  const aiDrawRetryRef = useRef<{ turn: number; used: number }>({ turn: 0, used: 0 });
+  const reRollWordRef = useRef(reRollWord);
+  reRollWordRef.current = reRollWord;
+
   useEffect(() => {
     if (!isDrawer || !round.active || !round.aiDrawing) return;
     const word = wordRef.current;
     if (!word) return;
     let cancelled = false;
+    const turn = round.endsAt;
+
+    const giveUp = () => {
+      if (cancelled) return;
+      const r = aiDrawRetryRef.current;
+      if (r.turn !== turn) aiDrawRetryRef.current = { turn, used: 0 };
+      if (aiDrawRetryRef.current.used < 1) {
+        aiDrawRetryRef.current.used += 1;
+        sendChatRef.current?.({
+          kind: "system",
+          text: "🤖 La IA no supo dibujar esa palabra — prueba con otra…",
+        });
+        reRollWordRef.current(true);
+        return;
+      }
+      sendChatRef.current?.({
+        kind: "system",
+        text: "🤖 La IA no pudo dibujar esa palabra — empezamos otra ronda.",
+      });
+      endRoundRef.current?.();
+    };
 
     (async () => {
       let strokes: { points: { x: number; y: number }[] }[] = [];
@@ -849,18 +899,13 @@ export default function Game({
           strokes?: { points: { x: number; y: number }[] }[];
         };
         if (!data.ok || !data.strokes?.length) {
-          if (!cancelled) {
-            sendChatRef.current?.({
-              kind: "system",
-              text: "🤖 La IA no pudo dibujar esa palabra — empezamos otra ronda.",
-            });
-            endRoundRef.current?.();
-          }
+          giveUp();
           return;
         }
         strokes = data.strokes;
       } catch {
-        if (!cancelled) endRoundRef.current?.();
+        // Network error or a non-JSON answer (e.g. the platform timed out).
+        giveUp();
         return;
       }
 
@@ -885,7 +930,7 @@ export default function Game({
     return () => {
       cancelled = true;
     };
-  }, [isDrawer, round.active, round.aiDrawing, round.id]);
+  }, [isDrawer, round.active, round.aiDrawing, round.id, round.endsAt]);
 
   // ---- AI guessing loop (drawer only) --------------------------------------
   // Skipped while the AI is the one drawing — it would just be recognizing its
@@ -1299,9 +1344,10 @@ export default function Game({
       prevGameOverRef.current = gameOver;
       return;
     }
-    if (gameOver && !prevGameOverRef.current) playSound("victory");
+    // Fanfare for the winner (or anyone sharing the win), a sad jingle for everyone else.
+    if (gameOver && !prevGameOverRef.current) playSound(scoreData.leaders.includes(name) ? "victory" : "defeat");
     prevGameOverRef.current = gameOver;
-  }, [gameOver, chatHistoryLoaded]);
+  }, [gameOver, chatHistoryLoaded, scoreData.leaders, name]);
 
   // Clock: a tick per second for the last ten seconds of a round.
   useEffect(() => {
@@ -1433,7 +1479,12 @@ export default function Game({
         </div>
       )}
 
-      {/* Left: players panel */}
+      {/* Left: scoreboard + players — always on screen from lg up, so the
+          score is visible next to the board without scrolling. */}
+      <div className="flex w-full min-w-0 flex-col gap-3 lg:col-start-2 lg:row-start-1 lg:max-h-[40dvh] lg:overflow-y-auto xl:col-start-1 xl:row-start-1 xl:h-full xl:max-h-none xl:overflow-hidden">
+        <div className="hidden lg:block">
+          <Scoreboard scores={scores} />
+        </div>
       <PlayersPanel
         players={players}
         aiEnabled={aiEnabled}
@@ -1444,6 +1495,7 @@ export default function Game({
         canKick={isCreator}
         onKick={kickPlayer}
       />
+      </div>
 
       {/* Center: canvas + status */}
       <div className="order-first flex min-w-0 flex-1 flex-col gap-3 lg:order-none lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto xl:col-start-2 xl:row-span-1">
@@ -1609,21 +1661,25 @@ export default function Game({
           )}
         </div>
 
-        <Canvas
-          key={round.id}
-          isDrawer={isDrawer}
-          snapshotRef={snapshotRef}
-          drawStrokeRef={drawStrokeRef}
-          aiDrawing={round.aiDrawing}
-          roomCode={roomCode}
-          name={name}
-        />
+        {/* Phones: a one-line score strip above the board (the full
+            scoreboard lives in the side column on larger screens). */}
+        <MiniScores scores={scores} />
 
-        <div className="flex items-center justify-between gap-3">
+        {/* Reactions sit beside the board from sm up, under it on phones. */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1">
+            <Canvas
+              key={round.id}
+              isDrawer={isDrawer}
+              snapshotRef={snapshotRef}
+              drawStrokeRef={drawStrokeRef}
+              aiDrawing={round.aiDrawing}
+              roomCode={roomCode}
+              name={name}
+            />
+          </div>
           <Reactions roomCode={roomCode} name={name} />
         </div>
-
-        <Scoreboard scores={scores} />
       </div>
 
       {/* Right: chat */}
@@ -1644,6 +1700,30 @@ export default function Game({
           onTyping={() => chat.sendTyping()}
         />
       </div>
+    </div>
+  );
+}
+
+const MINI_MEDALS = ["🥇", "🥈", "🥉"];
+
+/** Compact, single-row scoreboard for small screens (hidden from lg up). */
+function MiniScores({ scores }: { scores: [string, number][] }) {
+  if (scores.length === 0) return null;
+  return (
+    <div
+      className="pp-panel pp-mini-score flex items-center gap-1.5 overflow-x-auto rounded-xl border border-edge bg-panel px-3 py-2 lg:hidden"
+      aria-label="Marcador"
+    >
+      {scores.map(([n, pts], i) => (
+        <span
+          key={n}
+          className="flex shrink-0 items-center gap-1 rounded-full bg-fg/5 px-2.5 py-1 text-xs text-fg/80"
+        >
+          <span>{MINI_MEDALS[i] ?? `${i + 1}.`}</span>
+          <span className="max-w-[7rem] truncate">{n === "🤖 IA" ? "🤖 IA" : n}</span>
+          <span className="font-mono font-semibold text-fg/90">{pts}</span>
+        </span>
+      ))}
     </div>
   );
 }
