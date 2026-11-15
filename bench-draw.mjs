@@ -120,7 +120,14 @@ const PROMPT_NUEVO = (w) =>
   `  {"points":[[0.40,0.28],[0.43,0.22],[0.40,0.16],[0.43,0.10]]}\n` +
   ` ]}`;
 
-const PALABRAS = ["gato", "casa", "cohete", "paraguas", "pez", "bicicleta", "araña", "reloj"];
+const PALABRAS = ["gato", "casa", "cohete", "paraguas", "pez", "bicicleta", "araña", "reloj", "guitarra", "elefante", "tijeras", "árbol"];
+
+// Dibuja con la ruta REAL (/api/draw, con el servidor en marcha): mide el prompt nuevo + reencuadre.
+async function viaRuta(w) {
+  const r = await fetch("http://localhost:3000/api/draw", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ word: w, difficulty: "normal" }) });
+  const d = await r.json();
+  return d.ok ? d.strokes : null;
+}
 
 async function evaluar(nombre, model, promptFn) {
   let ok = 0, fallos = [];
@@ -128,7 +135,7 @@ async function evaluar(nombre, model, promptFn) {
   for (const w of PALABRAS) {
     await new Promise(r => setTimeout(r, 4000));
     try {
-      const strokes = parseStrokes(await gemini(model, [{ text: promptFn(w) }]));
+      const strokes = promptFn ? parseStrokes(await gemini(model, [{ text: promptFn(w) }])) : await viaRuta(w);
       if (!strokes) { fallos.push(`${w}(sin trazos)`); continue; }
       const png = render(strokes);
       const back = await gemini(model === "gemini-flash-lite-latest" ? model : "gemini-flash-lite-latest",
@@ -145,5 +152,5 @@ async function evaluar(nombre, model, promptFn) {
 }
 
 console.log(`Reconocidas por el adivinador (de ${PALABRAS.length} palabras):\n`);
-await evaluar("A-actual-lite", "gemini-flash-lite-latest", PROMPT_ACTUAL);
-await evaluar("B-nuevoPrompt-lite", "gemini-flash-lite-latest", PROMPT_NUEVO);
+if (process.env.BENCH_ONLY !== "ruta") await evaluar("A-actual-lite", "gemini-flash-lite-latest", PROMPT_ACTUAL);
+await evaluar("D-ruta-nueva", "gemini-flash-lite-latest", null);

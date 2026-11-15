@@ -39,13 +39,16 @@ export const GUESS = {
 
 /** When the AI draws (a human guesses): how much detail the doodle has. */
 export const DRAW = {
-  temperature: { easy: 1, normal: 0.6, hard: 0.4 } as Record<AiDifficulty, number>,
+  temperature: { easy: 0.7, normal: 0.5, hard: 0.4 } as Record<AiDifficulty, number>,
+  // Fewest strokes a doodle needs to be accepted (anything sparser is retried).
+  minStrokes: { easy: 3, normal: 4, hard: 8 } as Record<AiDifficulty, number>,
+  // Every level must stay RECOGNISABLE; difficulty only changes how much detail is added.
   rules: {
     easy:
-      "Hazlo MUY simple y esquemático, casi un símbolo: entre 2 y 4 trazos, 2 a 8 puntos por trazo, sin detalles ni sombreado. Que cueste un poco reconocerlo.\n",
+      "Nivel simple: solo la silueta y 1 o 2 rasgos clave, entre 4 y 7 trazos. Sin sombreado ni detalles pequeños, pero siempre inconfundible.\n",
     normal:
-      "Usa entre 3 y 12 trazos. Cada trazo es una polilínea conectada de 2 a 40 puntos.\n",
+      "Nivel normal: silueta más las partes características, entre 6 y 12 trazos.\n",
     hard:
-      "Hazlo detallado y fácil de reconocer: entre 10 y 20 trazos, con rasgos característicos, contornos bien definidos y detalles interiores. Cada trazo es una polilínea de 4 a 40 puntos.\n",
+      "Nivel detallado: silueta, partes características y detalles interiores, entre 10 y 20 trazos.\n",
   } as Record<AiDifficulty, string>,
 };
