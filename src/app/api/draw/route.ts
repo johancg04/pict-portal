@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DRAW, parseDifficulty } from "@/lib/difficulty";
+import { fitToCanvas, looksUsable } from "@/lib/drawFit";
 import { cachedDrawings, saveDrawing, VARIANTS_PER_WORD } from "@/lib/drawCache";
 
 // Server-only route: the AI takes its turn as the *drawer*. Given a word, it
@@ -45,18 +46,29 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
   const saved = await cachedDrawings(word, difficulty);
   if (saved.length >= VARIANTS_PER_WORD) {
     console.log(`[api/draw] "${word}" from cache (${saved.length} saved)`);
-    return NextResponse.json({ ok: true, strokes: pick(saved), cached: true });
+    return NextResponse.json({ ok: true, strokes: fitToCanvas(pick(saved)), cached: true });
   }
 
   const prompt =
-    `Estás jugando Pictionary y te toca DIBUJAR la palabra "${word}".\n` +
-    `Haz un dibujo de líneas simple y claro que un humano reconozca, como un garabato de pizarra.\n` +
-    `Responde SOLO con JSON estricto, sin prosa ni bloques de código:\n` +
-    `{"strokes":[{"points":[[x,y],[x,y],...]}, ...]}\n` +
-    `Reglas: las coordenadas son decimales normalizados de 0 a 1 ("x" de izquierda a derecha, "y" de arriba abajo).\n` +
-    DRAW.rules[difficulty] +
-    `Llena el lienzo: abarca aproximadamente x 0.15-0.85 e y 0.15-0.85. Dibuja el objeto completo y centrado.\n` +
-    `Para las curvas, usa muchos segmentos cortos. Cierra las formas repitiendo el primer punto al final.`;
+    `Eres un ilustrador dibujando "${word}" para Pictionary: los demás jugadores deben adivinarlo SOLO viendo tu dibujo. El lienzo es apaisado (3:2).\n\n` +
+    `PIENSA PRIMERO, luego dibuja. Responde SOLO con JSON estricto, sin prosa ni bloques de código:\n` +
+    `{"plan":"<qué partes dibujas y en qué zona>","strokes":[{"points":[[x,y],[x,y],...]}, ...]}\n\n` +
+    `El campo "plan" es obligatorio: si la palabra es abstracta (una acción, un concepto), elige UN objeto o escena concreta y muy conocida que la represente, y enumera las 3-6 partes reconocibles y su zona.\n\n` +
+    `CÓMO DIBUJAR BIEN:\n` +
+    `- Dibuja la SILUETA reconocible desde su vista más típica (animales y vehículos de perfil; caras y edificios de frente). Nada abstracto ni simbólico.\n` +
+    `- Incluye los rasgos que distinguen este objeto de otros parecidos (p. ej. orejas y bigotes en un gato, rueda y manillar en una bici).\n` +
+    `- Nunca escribas letras, palabras ni números.\n` +
+    `- Cada parte es un trazo aparte. ` + DRAW.rules[difficulty] +
+    `- El objeto ocupa casi todo el lienzo (x e y entre 0.10 y 0.90) y está centrado.\n` +
+    `- Las coordenadas son decimales 0..1 ("x" izquierda→derecha, "y" arriba→abajo). El eje x es 1.5 veces más ancho que el y: para que un círculo salga redondo, su radio en x debe ser 2/3 del radio en y.\n` +
+    `- Las curvas necesitan MUCHOS puntos: un círculo son ~16 puntos, no 4. Cierra las formas repitiendo el primer punto al final.\n\n` +
+    `EJEMPLO del nivel de calidad esperado (para "taza"):\n` +
+    `{"plan":"cuerpo cilíndrico al centro, asa a la derecha, vapor arriba",\n` +
+    ` "strokes":[\n` +
+    `  {"points":[[0.30,0.35],[0.30,0.75],[0.33,0.80],[0.62,0.80],[0.65,0.75],[0.65,0.35],[0.30,0.35]]},\n` +
+    `  {"points":[[0.65,0.45],[0.74,0.45],[0.78,0.52],[0.74,0.60],[0.65,0.60]]},\n` +
+    `  {"points":[[0.40,0.28],[0.43,0.22],[0.40,0.16],[0.43,0.10]]}\n` +
+    ` ]}`;
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -65,6 +77,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
   // therefore fails far too often, while a retry after a shorter budget
   // almost always lands quickly — so cap each try and allow one retry.
   let lastReason = "timeout";
+  // A sparse/tiny doodle is retried; if both tries come out weak, the better of
+  // them still beats skipping the turn (but is not saved for reuse).
+  let weak: Stroke[] | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 12000);
@@ -74,11 +89,19 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 4096, temperature: DRAW.temperature[difficulty] },
+          generationConfig: { maxOutputTokens: 6000, responseMimeType: "application/json", temperature: DRAW.temperature[difficulty] },
         }),
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+
+      if (res.status === 503 && attempt === 0) {
+        // Gemini overloaded: transient, one quick retry usually lands.
+        console.error("[api/draw] Gemini 503 — retrying");
+        await new Promise((r) => setTimeout(r, 1500));
+        lastReason = "gemini_503";
+        continue;
+      }
 
       if (res.status === 429 && attempt === 0) {
         // Per-minute quota: wait as long as Gemini asks (within reason) and
@@ -106,9 +129,16 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
         data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
       const strokes = parseStrokes(text);
       if (strokes) {
-        console.log(`[api/draw] drew "${word}" as ${strokes.length} strokes`);
-        await saveDrawing(word, difficulty, strokes);
-        return NextResponse.json({ ok: true, strokes });
+        const fitted = fitToCanvas(strokes);
+        if (looksUsable(strokes, DRAW.minStrokes[difficulty])) {
+          console.log(`[api/draw] drew "${word}" as ${strokes.length} strokes`);
+          await saveDrawing(word, difficulty, fitted);
+          return NextResponse.json({ ok: true, strokes: fitted });
+        }
+        console.error(`[api/draw] weak doodle for "${word}" (${strokes.length} strokes)${attempt === 0 ? " — retrying" : ""}`);
+        if (!weak || fitted.length > weak.length) weak = fitted;
+        lastReason = "weak";
+        continue;
       }
       // Unparseable is also worth one more shot — it's the same coin flip.
       console.error("[api/draw] unparseable. Raw:", JSON.stringify(text).slice(0, 300));
@@ -122,10 +152,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<DrawResult>> 
     }
   }
 
+  if (weak) return NextResponse.json({ ok: true, strokes: weak });
+
   // Gemini failed (quota, timeout…): a saved doodle beats skipping the turn.
   if (saved.length > 0) {
     console.log(`[api/draw] "${word}" from cache after ${lastReason}`);
-    return NextResponse.json({ ok: true, strokes: pick(saved), cached: true });
+    return NextResponse.json({ ok: true, strokes: fitToCanvas(pick(saved)), cached: true });
   }
   return NextResponse.json({ ok: false, reason: lastReason }, { status: 502 });
 }
