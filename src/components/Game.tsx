@@ -14,6 +14,7 @@ import Scoreboard from "./Scoreboard";
 import Status from "./Status";
 import ThemeToggle from "./ThemeToggle";
 import SkinPicker from "./SkinPicker";
+import ShareRoom from "./ShareRoom";
 import ScoreHelp from "./ScoreHelp";
 import SoundPanel from "./SoundPanel";
 import {
@@ -43,7 +44,8 @@ const AI_TURN_ID = "__ai__"; // the bot's slot in the turn order
 const AI_CHUNK = 6;
 const AI_STROKE_MS = 240;
 const AI_PAUSE_MS = 260; // pen lift between strokes
-const LOBBY_WAIT_MS = 30_000; // waiting room countdown before each round begins
+const FIRST_WAIT_MS = 30_000; // waiting room before the very first round (time for people to join)
+const NEXT_WAIT_MS = 4_000; // short breather between rounds once the game is running; rounds then start by themselves
 // Scoring lives in src/lib/scoring.ts (shared with the "?" help).
 
 type Round = {
@@ -1167,6 +1169,8 @@ export default function Game({
     setWaitStart(round.active ? null : Date.now());
   }, [round.active]);
 
+  // Once the game is running, nobody presses anything: the next round starts on its own.
+  const LOBBY_WAIT_MS = roundsPlayed === 0 ? FIRST_WAIT_MS : NEXT_WAIT_MS;
   const lobbySecondsLeft = round.active
     ? 0
     : waitStart === null
@@ -1266,6 +1270,13 @@ export default function Game({
 
   // ---- Avisos in-app --------------------------------------------------------
   const { toasts, push: pushToast } = useToasts();
+  // Big "your turn" splash the moment a round starts with you drawing.
+  const [turnBanner, setTurnBanner] = useState(false);
+  useEffect(() => {
+    if (!turnBanner) return;
+    const t = setTimeout(() => setTurnBanner(false), 2500);
+    return () => clearTimeout(t);
+  }, [turnBanner]);
   const notifiedRoundRef = useRef<number | null>(null);
   const notifiedTurnRef = useRef<string | null>(null);
 
@@ -1284,7 +1295,10 @@ export default function Game({
   useEffect(() => {
     if (!round.active || round.id === notifiedRoundRef.current) return;
     notifiedRoundRef.current = round.id;
-    if (isDrawer && !round.aiDrawing) pushToast("✏️ ¡Te toca dibujar!", "turn");
+    if (isDrawer && !round.aiDrawing) {
+      pushToast("✏️ ¡Te toca dibujar!", "turn");
+      setTurnBanner(true);
+    }
     else if (round.aiDrawing) pushToast("🤖 La IA está dibujando — ¡a adivinar!");
     else pushToast(`🎨 Dibuja ${round.drawerName} — ¡a adivinar!`);
   }, [round.active, round.id, round.aiDrawing, round.drawerName, isDrawer, pushToast]);
@@ -1455,6 +1469,14 @@ export default function Game({
       className="pp-game relative mx-auto flex min-h-dvh w-full max-w-[1600px] flex-col gap-3 overflow-x-hidden p-3 sm:gap-4 sm:p-4 lg:grid lg:h-dvh lg:grid-cols-[minmax(0,1fr)_300px] lg:grid-rows-[auto_minmax(0,1fr)] xl:grid-cols-[224px_minmax(0,1fr)_340px] xl:grid-rows-[minmax(0,1fr)]">
       <Celebration trigger={myWinId} muted={muted} armed={chatHistoryLoaded} />
       <Notifications toasts={toasts} />
+      {turnBanner && (
+        <div className="pointer-events-none fixed inset-0 z-40 grid place-items-center">
+          <div className="animate-[pp-drop_300ms_ease-out] rounded-3xl border-2 border-accent bg-accent px-8 py-6 text-center text-white shadow-2xl">
+            <div className="text-3xl font-extrabold">✏️ ¡Es tu turno!</div>
+            <div className="mt-1 text-sm opacity-90">Dibuja la palabra antes de que se acabe el tiempo</div>
+          </div>
+        </div>
+      )}
 
       {gameOver && (
         <Podium
@@ -1516,6 +1538,7 @@ export default function Game({
             <span className="pp-chip rounded-md bg-panel px-2 py-1 font-mono text-sm tracking-widest text-fg/80 sm:bg-transparent sm:p-0 sm:text-base">
               Sala: {roomCode}
             </span>
+            <ShareRoom roomCode={roomCode} />
             {totalRounds > 0 && (
               <span className="pp-chip rounded-md border border-edge px-2 py-0.5 text-xs font-medium text-fg/70">
                 Ronda {Math.min(roundsPlayed + 1, totalRounds)}/{totalRounds}
@@ -1648,13 +1671,18 @@ export default function Game({
                   <span className="text-fg/40">· empieza en {lobbySecondsLeft}s</span>
                 </div>
               </div>
-              {iStartNextRound && (
+              {iStartNextRound && roundsPlayed > 0 && !isAiTurn && (
+                <div className="shrink-0 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-white">
+                  ✏️ ¡Es tu turno!
+                </div>
+              )}
+              {iStartNextRound && roundsPlayed === 0 && (
                 <button
                   onClick={() => startRound(isAiTurn)}
                   disabled={!meId}
                   className="pp-btn-primary shrink-0 rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
                 >
-                  {isAiTurn ? "🤖 Empezar el turno de la IA" : "Empezar mi turno"}
+                  Iniciar partida
                 </button>
               )}
             </div>

@@ -8,7 +8,7 @@ import SkinPicker from "./SkinPicker";
 import ScoreHelp from "./ScoreHelp";
 import SoundPanel from "./SoundPanel";
 import { DEFAULT_LAPS, LAP_OPTIONS, MAX_LAPS, MIN_LAPS, parseLaps } from "@/lib/scoring";
-import { generateRoomCode, normalizeRoomCode } from "@/lib/room";
+import { generateRoomCode, normalizeRoomCode, readRoomFromUrl } from "@/lib/room";
 import { prewarmRoom } from "@/lib/realtime";
 import { parseCustomWords } from "@/lib/words";
 import { playSound, setMusicMode } from "@/lib/sound";
@@ -73,6 +73,16 @@ export default function Lobby({
     return prewarmRoom(pendingRoomCode);
   }, [pendingRoomCode]);
 
+  // Opened from an invite link/QR (?sala=CODE): go straight to "join" with the
+  // code filled in, so the guest only has to type a name.
+  useEffect(() => {
+    const code = readRoomFromUrl(window.location.search);
+    if (code) {
+      setMode("join");
+      setJoinCode(code);
+    }
+  }, []);
+
   // Calm music from the moment the app opens (it starts on the first tap/click,
   // since browsers don't allow sound before that).
   useEffect(() => {
@@ -129,6 +139,8 @@ export default function Lobby({
 
     // The submit click is the user gesture that unlocks audio: confirm with a start jingle.
     playSound("yourTurn");
+    // The invite param has done its job; drop it so leaving the room doesn't re-prefill it.
+    if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
 
     const customWords =
       mode === "create" ? (generatedWords.length > 0 ? generatedWords : parseCustomWords(customWordsText)) : [];
